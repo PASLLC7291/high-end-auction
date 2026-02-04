@@ -192,16 +192,17 @@ export async function GET() {
                     date: true,
                     bidStatus: true,
                     sale: { title: true },
-                    saleItem: {
-                        itemNumber: true,
-                        title: true,
-                        status: true,
-                        currentBid: true,
-                        dates: { closingEnd: true },
-                    },
-                },
-            },
-        },
+	                    saleItem: {
+	                        itemNumber: true,
+	                        title: true,
+	                        status: true,
+	                        currentBid: true,
+	                        currency: true,
+	                        dates: { closingEnd: true },
+	                    },
+	                },
+	            },
+	        },
     });
 
     const edges = res.userBidActivity?.edges ?? [];

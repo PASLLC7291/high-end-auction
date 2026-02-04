@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const promo = promoRes.rows[0] as {
+        const promo = promoRes.rows[0] as unknown as {
             id: string;
             code: string;
             amount_cents: number;
@@ -188,4 +188,3 @@ export async function POST(request: NextRequest) {
         );
     }
 }
-

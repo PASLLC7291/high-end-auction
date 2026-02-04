@@ -65,9 +65,13 @@ async function main() {
         throw new Error("--amount must be greater than 0");
     }
 
-    const max = maxRaw ? Number.parseInt(maxRaw, 10) : null;
-    if (maxRaw && (!Number.isInteger(max) || max < 1)) {
-        throw new Error("--max must be a positive integer");
+    let max: number | null = null;
+    if (maxRaw) {
+        const parsedMax = Number.parseInt(maxRaw, 10);
+        if (!Number.isInteger(parsedMax) || parsedMax < 1) {
+            throw new Error("--max must be a positive integer");
+        }
+        max = parsedMax;
     }
 
     const id = generateId();
@@ -105,4 +109,3 @@ main().catch((error) => {
     console.error("Failed to create promo:", error);
     process.exit(1);
 });
-
