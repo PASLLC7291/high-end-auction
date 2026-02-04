@@ -17,6 +17,7 @@ import Link from "next/link";
 import { DateTime } from "luxon";
 import { PageHero, Section, SectionHeader } from "@/components/trust/section-header";
 import { getClientApiClient } from "@/lib/basta-client";
+import { getAuctionCardImage } from "@/lib/cloudinary";
 
 export const metadata = {
   title: "Auction Results | Auction House",
@@ -182,7 +183,7 @@ export default async function ResultsPage() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           {highlightResults.map((result, index) => (
             <Card key={index} className="border-border/50 overflow-hidden group">
-              <div className="relative aspect-square bg-muted">
+              <div className="relative aspect-[16/10] bg-muted">
                 <div className="absolute inset-0 flex items-center justify-center">
                   <Gavel className="h-12 w-12 text-muted-foreground/30" />
                 </div>
@@ -280,7 +281,7 @@ export default async function ResultsPage() {
                     <div className="relative aspect-[16/10] bg-muted">
                       {auction.image ? (
                         <img
-                          src={auction.image}
+                          src={getAuctionCardImage(auction.image)}
                           alt={auction.title}
                           className="h-full w-full object-cover"
                         />

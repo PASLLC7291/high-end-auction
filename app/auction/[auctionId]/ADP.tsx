@@ -27,6 +27,7 @@ import { translateItemStatus, formatCurrency, toMajorCurrency } from "@/lib/util
 import { getClientApiClient } from "@/lib/basta-client";
 import { RegistrationModal, type SaleRegistration } from "@/components/registration-modal";
 import { CountdownDisplay } from "./lot/[lotId]/countdown";
+import { getOptimizedImageUrl } from "@/lib/cloudinary";
 
 // Import the reusable filter system
 import {
@@ -664,7 +665,7 @@ export default function AuctionDetailPage({
                   <Card className="group overflow-hidden transition-shadow hover:shadow-lg">
                     <div className="relative aspect-4/3 overflow-hidden bg-muted">
                       <img
-                        src={lot.image || "/placeholder.svg"}
+                        src={getOptimizedImageUrl(lot.image, { width: 600, height: 450, crop: "fill" })}
                         alt={lot.title}
                         className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                       />

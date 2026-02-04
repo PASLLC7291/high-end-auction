@@ -22,6 +22,7 @@ import { getClientApiClient } from "@/lib/basta-client";
 import { clientApiSchema } from "@bastaai/basta-js";
 import { PageHero, Section, SectionHeader } from "@/components/trust/section-header";
 import { StatusBadge } from "@/components/trust/badges";
+import { getAuctionCardImage } from "@/lib/cloudinary";
 
 export const metadata = {
   title: "Auctions | Auction House",
@@ -137,7 +138,7 @@ function AuctionCard({ auction, isPast = false }: { auction: Auction; isPast?: b
         <div className="relative aspect-[16/10] overflow-hidden bg-muted">
           {auction.image ? (
             <img
-              src={auction.image}
+              src={getAuctionCardImage(auction.image)}
               alt={auction.title || "Auction"}
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
             />

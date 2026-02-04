@@ -52,6 +52,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { formatCurrency } from "@/lib/utils";
 import { getClientApiClient } from "@/lib/basta-client";
+import { getLotDetailImage, getLotThumbnail } from "@/lib/cloudinary";
 import { RegistrationModal, type SaleRegistration } from "@/components/registration-modal";
 import { useClientApi } from "@bastaai/basta-js/client";
 import { mapItemToLot, mapSaleToSale, type SaleItemData, type Lot, type Sale } from "./lot-types";
@@ -433,7 +434,7 @@ export default function LotDetailPage({
               {/* Main Image */}
               <div className="relative flex-1 min-h-0 overflow-hidden rounded-2xl bg-muted">
                 <img
-                  src={lotData.images[selectedImage] || "/placeholder.svg"}
+                  src={getLotDetailImage(lotData.images[selectedImage])}
                   alt={lotData.title}
                   className="h-full w-full object-cover"
                 />
@@ -452,7 +453,7 @@ export default function LotDetailPage({
                         }`}
                     >
                       <img
-                        src={img || "/placeholder.svg"}
+                        src={getLotThumbnail(img)}
                         alt={`View ${idx + 1}`}
                         className="h-full w-full object-cover"
                       />
@@ -476,7 +477,7 @@ export default function LotDetailPage({
                     <ChevronLeft className="h-4 w-4" />
                     {lotData.prevItem.image && (
                       <img
-                        src={lotData.prevItem.image}
+                        src={getLotThumbnail(lotData.prevItem.image)}
                         alt={lotData.prevItem.title || "Previous lot"}
                         className="h-8 w-8 rounded object-cover"
                       />
@@ -495,7 +496,7 @@ export default function LotDetailPage({
                     <span className="font-medium">Next</span>
                     {lotData.nextItem.image && (
                       <img
-                        src={lotData.nextItem.image}
+                        src={getLotThumbnail(lotData.nextItem.image)}
                         alt={lotData.nextItem.title || "Next lot"}
                         className="h-8 w-8 rounded object-cover"
                       />

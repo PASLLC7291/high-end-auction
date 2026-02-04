@@ -25,6 +25,7 @@ import { StatusBadge } from "@/components/trust/badges";
 import { TestimonialCard } from "@/components/trust/testimonial-card";
 import { TeamMemberCard } from "@/components/trust/team-member-card";
 import { Section, SectionHeader } from "@/components/trust/section-header";
+import { getAuctionCardImage } from "@/lib/cloudinary";
 
 type Auction = {
   id: string;
@@ -284,7 +285,7 @@ export default async function HomePage() {
                       <div className="relative aspect-[16/10] overflow-hidden bg-muted">
                         {auction.image ? (
                           <img
-                            src={auction.image}
+                            src={getAuctionCardImage(auction.image)}
                             alt={auction.title || "Auction"}
                             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                           />
