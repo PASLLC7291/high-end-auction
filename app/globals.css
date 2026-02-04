@@ -1,0 +1,385 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * DESIGN SYSTEM: Trust-Focused Auction Platform
+ *
+ * Philosophy: Warm, established, professional
+ * - Cream/ivory backgrounds (premium, not sterile)
+ * - Deep charcoal text (authoritative)
+ * - Forest green accent (trust, stability, growth)
+ * - Subtle gold touches (premium, traditional)
+ */
+
+:root {
+  /* ========== BASE COLORS ========== */
+  /* Warm ivory background - feels established, premium */
+  --background: oklch(0.985 0.008 85);
+  /* Deep charcoal - authoritative, easy to read */
+  --foreground: oklch(0.20 0.015 260);
+
+  /* ========== CARD & SURFACES ========== */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.20 0.015 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.20 0.015 260);
+
+  /* ========== PRIMARY - Deep forest green (trust, stability) ========== */
+  --primary: oklch(0.35 0.10 160);
+  --primary-foreground: oklch(0.98 0.005 85);
+
+  /* ========== SECONDARY - Warm gray ========== */
+  --secondary: oklch(0.94 0.006 85);
+  --secondary-foreground: oklch(0.25 0.015 260);
+
+  /* ========== MUTED - Soft warm gray ========== */
+  --muted: oklch(0.95 0.006 85);
+  --muted-foreground: oklch(0.50 0.010 260);
+
+  /* ========== ACCENT - Subtle warm tone for hovers ========== */
+  --accent: oklch(0.92 0.015 85);
+  --accent-foreground: oklch(0.25 0.015 260);
+
+  /* ========== SEMANTIC COLORS ========== */
+  --destructive: oklch(0.55 0.20 25);
+  --destructive-foreground: oklch(0.98 0 0);
+
+  /* ========== BORDERS & INPUTS ========== */
+  --border: oklch(0.90 0.008 85);
+  --input: oklch(0.92 0.006 85);
+  --ring: oklch(0.35 0.10 160);
+
+  /* ========== CHART COLORS ========== */
+  --chart-1: oklch(0.35 0.10 160);  /* Primary green */
+  --chart-2: oklch(0.55 0.12 45);   /* Warm amber */
+  --chart-3: oklch(0.45 0.10 260);  /* Deep blue */
+  --chart-4: oklch(0.60 0.15 25);   /* Coral */
+  --chart-5: oklch(0.50 0.08 200);  /* Teal */
+
+  /* ========== BORDER RADIUS ========== */
+  --radius: 0.5rem;
+
+  /* ========== SIDEBAR ========== */
+  --sidebar: oklch(0.98 0.006 85);
+  --sidebar-foreground: oklch(0.20 0.015 260);
+  --sidebar-primary: oklch(0.35 0.10 160);
+  --sidebar-primary-foreground: oklch(0.98 0.005 85);
+  --sidebar-accent: oklch(0.94 0.008 85);
+  --sidebar-accent-foreground: oklch(0.25 0.015 260);
+  --sidebar-border: oklch(0.90 0.008 85);
+  --sidebar-ring: oklch(0.35 0.10 160);
+
+  /* ========== CUSTOM: TRUST TOKENS ========== */
+  /* Success/Trust green */
+  --trust: oklch(0.55 0.15 155);
+  --trust-foreground: oklch(0.98 0 0);
+
+  /* Premium gold accent */
+  --gold: oklch(0.65 0.15 85);
+  --gold-foreground: oklch(0.20 0.02 85);
+
+  /* Status colors */
+  --status-live: oklch(0.55 0.18 145);
+  --status-closing: oklch(0.60 0.18 55);
+  --status-open: oklch(0.50 0.12 250);
+  --status-closed: oklch(0.55 0.02 260);
+  --status-upcoming: oklch(0.45 0.10 280);
+
+  /* Section backgrounds */
+  --section-alt: oklch(0.97 0.008 85);
+  --section-highlight: oklch(0.95 0.02 160);
+}
+
+.dark {
+  /* ========== DARK MODE ========== */
+  --background: oklch(0.14 0.015 260);
+  --foreground: oklch(0.95 0.008 85);
+
+  --card: oklch(0.18 0.015 260);
+  --card-foreground: oklch(0.95 0.008 85);
+  --popover: oklch(0.18 0.015 260);
+  --popover-foreground: oklch(0.95 0.008 85);
+
+  --primary: oklch(0.65 0.12 160);
+  --primary-foreground: oklch(0.14 0.015 260);
+
+  --secondary: oklch(0.22 0.015 260);
+  --secondary-foreground: oklch(0.95 0.008 85);
+
+  --muted: oklch(0.22 0.015 260);
+  --muted-foreground: oklch(0.65 0.008 85);
+
+  --accent: oklch(0.25 0.02 260);
+  --accent-foreground: oklch(0.95 0.008 85);
+
+  --destructive: oklch(0.50 0.18 25);
+  --destructive-foreground: oklch(0.95 0 0);
+
+  --border: oklch(0.28 0.015 260);
+  --input: oklch(0.25 0.015 260);
+  --ring: oklch(0.65 0.12 160);
+
+  --chart-1: oklch(0.65 0.12 160);
+  --chart-2: oklch(0.65 0.14 45);
+  --chart-3: oklch(0.55 0.12 260);
+  --chart-4: oklch(0.65 0.16 25);
+  --chart-5: oklch(0.55 0.10 200);
+
+  --sidebar: oklch(0.16 0.015 260);
+  --sidebar-foreground: oklch(0.95 0.008 85);
+  --sidebar-primary: oklch(0.65 0.12 160);
+  --sidebar-primary-foreground: oklch(0.14 0.015 260);
+  --sidebar-accent: oklch(0.22 0.015 260);
+  --sidebar-accent-foreground: oklch(0.95 0.008 85);
+  --sidebar-border: oklch(0.28 0.015 260);
+  --sidebar-ring: oklch(0.65 0.12 160);
+
+  /* Dark mode trust tokens */
+  --trust: oklch(0.60 0.15 155);
+  --trust-foreground: oklch(0.14 0 0);
+  --gold: oklch(0.70 0.15 85);
+  --gold-foreground: oklch(0.14 0.02 85);
+  --section-alt: oklch(0.16 0.015 260);
+  --section-highlight: oklch(0.20 0.025 160);
+}
+
+@theme inline {
+  /* ========== TYPOGRAPHY ========== */
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Georgia", "Times New Roman", serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+
+  /* ========== COLOR MAPPINGS ========== */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Custom trust colors */
+  --color-trust: var(--trust);
+  --color-trust-foreground: var(--trust-foreground);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-status-live: var(--status-live);
+  --color-status-closing: var(--status-closing);
+  --color-status-open: var(--status-open);
+  --color-status-closed: var(--status-closed);
+  --color-status-upcoming: var(--status-upcoming);
+  --color-section-alt: var(--section-alt);
+  --color-section-highlight: var(--section-highlight);
+
+  /* ========== BORDER RADIUS ========== */
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --radius-2xl: calc(var(--radius) + 10px);
+  --radius-full: 9999px;
+
+  /* ========== SIDEBAR ========== */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* ========== BASE STYLES ========== */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  /* Serif headings for trust/establishment feel */
+  h1, h2, h3 {
+    font-family: var(--font-serif);
+    @apply tracking-tight;
+  }
+
+  h1 {
+    @apply text-4xl font-medium leading-tight md:text-5xl lg:text-6xl;
+  }
+
+  h2 {
+    @apply text-3xl font-medium leading-tight md:text-4xl;
+  }
+
+  h3 {
+    @apply text-xl font-medium leading-snug md:text-2xl;
+  }
+
+  /* Body text defaults */
+  p {
+    @apply leading-relaxed;
+  }
+
+  /* Link defaults */
+  a {
+    @apply transition-colors;
+  }
+}
+
+/* ========== UTILITY CLASSES ========== */
+@layer utilities {
+  /* Section background alternates */
+  .section-alt {
+    background-color: var(--section-alt);
+  }
+
+  .section-highlight {
+    background-color: var(--section-highlight);
+  }
+
+  /* Trust badge styling */
+  .trust-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium;
+    background-color: var(--trust);
+    color: var(--trust-foreground);
+  }
+
+  /* Gold accent */
+  .gold-accent {
+    color: var(--gold);
+  }
+
+  /* Status badges */
+  .status-live {
+    background-color: var(--status-live);
+    @apply text-white;
+  }
+
+  .status-closing {
+    background-color: var(--status-closing);
+    @apply text-white;
+  }
+
+  .status-open {
+    background-color: var(--status-open);
+    @apply text-white;
+  }
+
+  .status-closed {
+    background-color: var(--status-closed);
+    @apply text-white;
+  }
+
+  .status-upcoming {
+    background-color: var(--status-upcoming);
+    @apply text-white;
+  }
+
+  /* Premium card shadow */
+  .shadow-premium {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 4px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  .shadow-premium-hover {
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.04),
+      0 8px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Container max widths */
+  .container-narrow {
+    @apply max-w-3xl mx-auto px-4;
+  }
+
+  .container-content {
+    @apply max-w-5xl mx-auto px-4;
+  }
+
+  /* Text balance for headings */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Generous section spacing */
+  .section-padding {
+    @apply py-16 md:py-24;
+  }
+
+  .section-padding-sm {
+    @apply py-12 md:py-16;
+  }
+}
+
+/* ========== COMPONENT OVERRIDES ========== */
+@layer components {
+  /* Card hover effect */
+  .card-interactive {
+    @apply transition-all duration-200;
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 4px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  .card-interactive:hover {
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.04),
+      0 8px 24px rgba(0, 0, 0, 0.08);
+    transform: translateY(-2px);
+  }
+
+  /* Trust bar styling */
+  .trust-bar {
+    @apply border-y border-border/50;
+    background-color: var(--section-alt);
+  }
+
+  /* Page hero consistent styling */
+  .page-hero {
+    @apply py-16 md:py-24 border-b border-border/50;
+    background-color: var(--section-alt);
+  }
+
+  /* Metric display */
+  .metric {
+    @apply text-center;
+  }
+
+  .metric-value {
+    @apply text-3xl font-medium text-foreground md:text-4xl;
+    font-family: var(--font-serif);
+  }
+
+  .metric-label {
+    @apply mt-1 text-sm text-muted-foreground;
+  }
+}
