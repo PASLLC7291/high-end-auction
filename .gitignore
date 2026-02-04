@@ -27,3 +27,4 @@ db/*.db-wal
 
 # Local Netlify folder
 .netlify
+.vercel

@@ -272,15 +272,7 @@ export default function TeamPage() {
             title={dept.title}
             subtitle={dept.description}
           />
-          <TeamGrid>
-            {dept.members.map((member, index) => (
-              <TeamMemberCard
-                key={index}
-                member={member}
-                showContact={true}
-              />
-            ))}
-          </TeamGrid>
+          <TeamGrid members={dept.members} showContact={true} />
         </Section>
       ))}
 
@@ -290,15 +282,7 @@ export default function TeamPage() {
           title="Client Services"
           subtitle="Dedicated support from inquiry to delivery."
         />
-        <TeamGrid>
-          {clientServices.map((member, index) => (
-            <TeamMemberCard
-              key={index}
-              member={member}
-              showContact={true}
-            />
-          ))}
-        </TeamGrid>
+        <TeamGrid members={clientServices} showContact={true} />
       </Section>
 
       {/* Join Our Team CTA */}
