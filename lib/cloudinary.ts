@@ -3,7 +3,21 @@
  * Uses fetch mode to proxy and transform external images (like Basta CDN)
  */
 
-const CLOUD_NAME = "dqcs8uqsq";
+const DEFAULT_CLOUD_NAME = "dqcs8uqsq";
+
+function getCloudName(): string | null {
+  const name =
+    process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ||
+    process.env.CLOUDINARY_CLOUD_NAME ||
+    DEFAULT_CLOUD_NAME;
+  return name?.trim() ? name.trim() : null;
+}
+
+function isCloudinaryDisabled(): boolean {
+  const value = process.env.NEXT_PUBLIC_DISABLE_CLOUDINARY;
+  if (!value) return false;
+  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
 
 type TransformOptions = {
   width?: number;
@@ -31,6 +45,21 @@ export function getOptimizedImageUrl(
     return imageUrl;
   }
 
+  // Allow disabling Cloudinary entirely (falls back to the upstream image URL).
+  if (isCloudinaryDisabled()) {
+    return imageUrl;
+  }
+
+  const cloudName = getCloudName();
+  if (!cloudName) {
+    return imageUrl;
+  }
+
+  // Avoid double-proxying Cloudinary URLs.
+  if (imageUrl.includes("res.cloudinary.com/")) {
+    return imageUrl;
+  }
+
   const {
     width,
     height,
@@ -50,13 +79,17 @@ export function getOptimizedImageUrl(
   if (quality) transforms.push(`q_${quality}`);
   if (format) transforms.push(`f_${format}`);
 
-  // Add gravity for smart cropping
-  transforms.push("g_auto");
+  // Add gravity for smart cropping where supported
+  if (crop === "fill" || crop === "thumb") {
+    transforms.push("g_auto");
+  }
 
   const transformString = transforms.join(",");
 
-  // Cloudinary fetch expects the raw URL (not encoded)
-  return `https://res.cloudinary.com/${CLOUD_NAME}/image/fetch/${transformString}/${imageUrl}`;
+  // Encode remote URL (Cloudinary fetch treats it as part of the path).
+  const encodedRemote = encodeURIComponent(imageUrl);
+
+  return `https://res.cloudinary.com/${cloudName}/image/fetch/${transformString}/${encodedRemote}`;
 }
 
 /**

@@ -14,23 +14,35 @@ const getDomain = () => {
 
 const domain = getDomain();
 
-export const CLIENT_API_URL = process.env.NEXT_PUBLIC_BASTA_CLIENT_API_URL || `https://client.api.${domain}/graphql`;
-export const WS_CLIENT_API_URL = process.env.NEXT_PUBLIC_BASTA_WS_CLIENT_API_URL || `wss://client.api.${domain}/graphql`;
+export const CLIENT_API_REMOTE_URL =
+    process.env.BASTA_CLIENT_API_URL ||
+    process.env.NEXT_PUBLIC_BASTA_CLIENT_API_URL ||
+    `https://client.api.${domain}/graphql`;
+// Backwards compatible export for server-side usage.
+export const CLIENT_API_URL = CLIENT_API_REMOTE_URL;
+export const CLIENT_API_PROXY_URL = "/api/basta/client";
+export const WS_CLIENT_API_URL =
+    process.env.NEXT_PUBLIC_BASTA_WS_CLIENT_API_URL ||
+    `wss://client.api.${domain}/graphql`;
 export const MANAGEMENT_API_URL = process.env.BASTA_MANAGEMENT_API_URL || `https://management.api.${domain}/graphql`;
 
 /**
  * Creates a Basta client API client for read operations and bidding
  * @param bidderToken - Optional bidder token for authenticated operations (bidding)
  */
-export function getClientApiClient(bidderToken?: string) {
+export function getClientApiClient(
+    bidderToken?: string,
+    options?: { signal?: AbortSignal }
+) {
 
     const headers = {
         ...(bidderToken ? { "Authorization": `Bearer ${bidderToken}` } : {}),
     };
 
     return createClientApiClient({
-        url: CLIENT_API_URL,
+        url: typeof window === "undefined" ? CLIENT_API_REMOTE_URL : CLIENT_API_PROXY_URL,
         headers: headers,
+        signal: options?.signal,
     });
 }
 
@@ -65,4 +77,3 @@ export function getAccountId(): string {
     }
     return accountId;
 }
-

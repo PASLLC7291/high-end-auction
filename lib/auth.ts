@@ -32,7 +32,8 @@ async function createBidderToken(userId: string): Promise<BidderTokenData | null
                     input: {
                         metadata: {
                             userId: userId,
-                            ttl: 3600, // 1 hour TTL
+                            // Basta TTL is in minutes
+                            ttl: 60, // 1 hour
                         }
                     }
                 },
@@ -95,7 +96,7 @@ export const authOptions: NextAuthOptions = {
         }),
     ],
     callbacks: {
-        async jwt({ token, user, trigger }) {
+        async jwt({ token, user, trigger, session }) {
             if (user) {
                 token.id = user.id;
                 token.name = user.name;
@@ -106,6 +107,12 @@ export const authOptions: NextAuthOptions = {
                     token.bidderToken = bidderTokenData.token;
                     token.bidderTokenExpiration = bidderTokenData.expiration;
                 }
+            }
+
+            // Allow client-side `session.update()` to refresh name/email in the JWT
+            if (trigger === "update" && session?.user) {
+                token.name = session.user.name ?? token.name;
+                token.email = session.user.email ?? token.email;
             }
 
             // Check if bidder token is expired or missing and refresh it

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
 import {
   User,
   Menu,
@@ -37,6 +38,11 @@ const navLinks = [
 export function AuctionNav() {
   const pathname = usePathname();
   const { data: session, status } = useSession();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleLogout = async () => {
     await signOut({ callbackUrl: "/", redirect: true });
@@ -103,205 +109,215 @@ export function AuctionNav() {
           {/* Right actions */}
           <div className="flex items-center gap-2">
             {/* Desktop auth */}
-            {!isLoading && (
-              <div className="hidden md:flex items-center gap-2">
-                {user ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        className="gap-2 pl-2 pr-3"
-                      >
-                        <Avatar className="h-7 w-7">
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                            {getInitials(user.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm font-medium max-w-[100px] truncate">
-                          {user.name?.split(" ")[0]}
-                        </span>
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuLabel>
-                        <div className="flex flex-col space-y-1">
-                          <p className="text-sm font-medium">{user.name}</p>
-                          <p className="text-xs text-muted-foreground">{user.email}</p>
-                        </div>
-                      </DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild>
-                        <Link href="/account" className="cursor-pointer">
-                          <User className="mr-2 h-4 w-4" />
-                          My Account
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/account/bids" className="cursor-pointer">
-                          <Gavel className="mr-2 h-4 w-4" />
-                          My Bids
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/account/watchlist" className="cursor-pointer">
-                          <Heart className="mr-2 h-4 w-4" />
-                          Watchlist
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/account/payment" className="cursor-pointer">
-                          <CreditCard className="mr-2 h-4 w-4" />
-                          Payment Methods
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild>
-                        <Link href="/account/settings" className="cursor-pointer">
-                          <Settings className="mr-2 h-4 w-4" />
-                          Settings
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={handleLogout}
-                        className="text-destructive focus:text-destructive cursor-pointer"
-                      >
-                        <LogOut className="mr-2 h-4 w-4" />
-                        Log out
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : (
-                  <>
-                    <Link href="/login">
-                      <Button variant="ghost" size="sm">
-                        Log in
-                      </Button>
-                    </Link>
-                    <Link href="/signup">
-                      <Button size="sm">
-                        Sign up
-                      </Button>
-                    </Link>
-                  </>
-                )}
-              </div>
-            )}
+            <div className="hidden md:flex items-center gap-2">
+              {!mounted || isLoading ? (
+                <div
+                  className="h-9 w-[140px] rounded-md bg-muted/60"
+                  aria-hidden="true"
+                />
+              ) : user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="gap-2 pl-2 pr-3">
+                      <Avatar className="h-7 w-7">
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                          {getInitials(user.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm font-medium max-w-[100px] truncate">
+                        {user.name?.split(" ")[0]}
+                      </span>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-sm font-medium">{user.name}</p>
+                        <p className="text-xs text-muted-foreground">{user.email}</p>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link href="/account" className="cursor-pointer">
+                        <User className="mr-2 h-4 w-4" />
+                        My Account
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/account/bids" className="cursor-pointer">
+                        <Gavel className="mr-2 h-4 w-4" />
+                        My Bids
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/account/watchlist" className="cursor-pointer">
+                        <Heart className="mr-2 h-4 w-4" />
+                        Watchlist
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/account/payment" className="cursor-pointer">
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        Payment Methods
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link href="/account/settings" className="cursor-pointer">
+                        <Settings className="mr-2 h-4 w-4" />
+                        Settings
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={handleLogout}
+                      className="text-destructive focus:text-destructive cursor-pointer"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Log out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <>
+                  <Link href="/login">
+                    <Button variant="ghost" size="sm">
+                      Log in
+                    </Button>
+                  </Link>
+                  <Link href="/signup">
+                    <Button size="sm">Sign up</Button>
+                  </Link>
+                </>
+              )}
+            </div>
 
             {/* Mobile menu */}
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden">
-                  <Menu className="h-5 w-5" />
-                  <span className="sr-only">Open menu</span>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-[300px] sm:w-[350px]">
-                <SheetHeader>
-                  <SheetTitle className="text-left">Menu</SheetTitle>
-                </SheetHeader>
-                <div className="flex flex-col gap-1 pt-6">
-                  {navLinks.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      className={cn(
-                        "px-3 py-3 text-base font-medium rounded-md transition-colors",
-                        pathname === link.href
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                      )}
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
-                </div>
+            {mounted ? (
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="md:hidden">
+                    <Menu className="h-5 w-5" />
+                    <span className="sr-only">Open menu</span>
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-[300px] sm:w-[350px]">
+                  <SheetHeader>
+                    <SheetTitle className="text-left">Menu</SheetTitle>
+                  </SheetHeader>
+                  <div className="flex flex-col gap-1 pt-6">
+                    {navLinks.map((link) => (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        className={cn(
+                          "px-3 py-3 text-base font-medium rounded-md transition-colors",
+                          pathname === link.href
+                            ? "bg-accent text-foreground"
+                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        )}
+                      >
+                        {link.label}
+                      </Link>
+                    ))}
+                  </div>
 
-                <div className="mt-6 border-t border-border pt-6">
-                  {user ? (
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-3 px-3 py-2">
-                        <Avatar className="h-10 w-10">
-                          <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                            {getInitials(user.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{user.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {user.email}
-                          </p>
+                  <div className="mt-6 border-t border-border pt-6">
+                    {user ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-3 px-3 py-2">
+                          <Avatar className="h-10 w-10">
+                            <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                              {getInitials(user.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{user.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {user.email}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 space-y-1">
+                          <Link
+                            href="/account"
+                            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-md hover:bg-accent"
+                          >
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            My Account
+                          </Link>
+                          <Link
+                            href="/account/bids"
+                            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-md hover:bg-accent"
+                          >
+                            <Gavel className="h-4 w-4 text-muted-foreground" />
+                            My Bids
+                          </Link>
+                          <Link
+                            href="/account/watchlist"
+                            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-md hover:bg-accent"
+                          >
+                            <Heart className="h-4 w-4 text-muted-foreground" />
+                            Watchlist
+                          </Link>
+                          <Link
+                            href="/account/payment"
+                            className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-md hover:bg-accent"
+                          >
+                            <CreditCard className="h-4 w-4 text-muted-foreground" />
+                            Payment Methods
+                          </Link>
+                        </div>
+
+                        <div className="mt-4 pt-4 border-t border-border">
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={handleLogout}
+                          >
+                            <LogOut className="mr-2 h-4 w-4" />
+                            Log out
+                          </Button>
                         </div>
                       </div>
-
-                      <div className="mt-4 space-y-1">
-                        <Link
-                          href="/account"
-                          className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-md hover:bg-accent"
-                        >
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          My Account
+                    ) : (
+                      <div className="space-y-3">
+                        <Link href="/login" className="block">
+                          <Button variant="outline" className="w-full">
+                            Log in
+                          </Button>
                         </Link>
-                        <Link
-                          href="/account/bids"
-                          className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-md hover:bg-accent"
-                        >
-                          <Gavel className="h-4 w-4 text-muted-foreground" />
-                          My Bids
-                        </Link>
-                        <Link
-                          href="/account/watchlist"
-                          className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-md hover:bg-accent"
-                        >
-                          <Heart className="h-4 w-4 text-muted-foreground" />
-                          Watchlist
-                        </Link>
-                        <Link
-                          href="/account/payment"
-                          className="flex items-center gap-3 px-3 py-2.5 text-sm rounded-md hover:bg-accent"
-                        >
-                          <CreditCard className="h-4 w-4 text-muted-foreground" />
-                          Payment Methods
+                        <Link href="/signup" className="block">
+                          <Button className="w-full">Sign up</Button>
                         </Link>
                       </div>
-
-                      <div className="mt-4 pt-4 border-t border-border">
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={handleLogout}
-                        >
-                          <LogOut className="mr-2 h-4 w-4" />
-                          Log out
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <Link href="/login" className="block">
-                        <Button variant="outline" className="w-full">
-                          Log in
-                        </Button>
-                      </Link>
-                      <Link href="/signup" className="block">
-                        <Button className="w-full">
-                          Sign up
-                        </Button>
-                      </Link>
-                    </div>
-                  )}
-                </div>
-
-                {/* Mobile trust indicator */}
-                <div className="absolute bottom-6 left-6 right-6">
-                  <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                    <Shield className="h-3.5 w-3.5" />
-                    <span>Secure & Trusted</span>
+                    )}
                   </div>
-                </div>
-              </SheetContent>
-            </Sheet>
+
+                  {/* Mobile trust indicator */}
+                  <div className="absolute bottom-6 left-6 right-6">
+                    <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                      <Shield className="h-3.5 w-3.5" />
+                      <span>Secure & Trusted</span>
+                    </div>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden"
+                disabled
+                aria-hidden="true"
+                tabIndex={-1}
+              >
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Open menu</span>
+              </Button>
+            )}
           </div>
         </nav>
       </div>

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { getAccountId, getManagementApiClient } from "@/lib/basta-client";
 import { stripe } from "@/lib/stripe";
 import { getPaymentProfile } from "@/lib/payment-profile";
+import type { managementApiSchema } from "@bastaai/basta-js";
 import {
     markWebhookProcessed,
     getPaymentOrderBySaleAndUser,
@@ -27,13 +29,79 @@ type BastaWebhook = {
     data: ItemsStatusChangedPayload | SaleStatusChangedPayload | Record<string, unknown>;
 };
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function isSignatureValid(params: {
+    rawBody: string;
+    signatureHeader: string;
+    secret: string;
+    toleranceSeconds?: number;
+}) {
+    const { rawBody, signatureHeader, secret, toleranceSeconds = 300 } = params;
+
+    // Header format: t=<timestamp>,v1=<signature>
+    const parts = Object.fromEntries(
+        signatureHeader
+            .split(",")
+            .map((part) => part.trim())
+            .map((part) => {
+                const idx = part.indexOf("=");
+                return idx === -1 ? [part, ""] : [part.slice(0, idx), part.slice(idx + 1)];
+            })
+    );
+
+    const timestamp = Number(parts.t);
+    const signature = parts.v1;
+
+    if (!Number.isFinite(timestamp) || !signature) {
+        return { valid: false, reason: "Invalid signature header format" as const };
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - timestamp) > toleranceSeconds) {
+        return { valid: false, reason: "Signature timestamp outside tolerance" as const };
+    }
+
+    const normalizedSecret = secret.startsWith("whsec_") ? secret.slice("whsec_".length) : secret;
+    const signedContent = `${timestamp}.${rawBody}`;
+    const computed = crypto
+        .createHmac("sha256", normalizedSecret)
+        .update(signedContent)
+        .digest("hex");
+
+    try {
+        const computedBuf = Buffer.from(computed);
+        const receivedBuf = Buffer.from(signature);
+        if (computedBuf.length !== receivedBuf.length) {
+            return { valid: false, reason: "Invalid signature" as const };
+        }
+        return {
+            valid: crypto.timingSafeEqual(computedBuf, receivedBuf),
+            reason: "Invalid signature" as const,
+        };
+    } catch {
+        return { valid: false, reason: "Invalid signature" as const };
+    }
+}
+
 type SaleItemNode = {
     id: string;
     status: string;
     leaderId?: string | null;
     currentBid?: number | null;
     title?: string | null;
-    currency?: string | null;
+    currency?: managementApiSchema.Currency | null;
+};
+
+type SaleItemsQueryResponse = {
+    sale?: {
+        currency?: managementApiSchema.Currency | null;
+        items?: {
+            edges?: Array<{ node?: SaleItemNode | null } | null> | null;
+            pageInfo?: { hasNextPage: boolean; endCursor?: string | null } | null;
+        } | null;
+    } | null;
 };
 
 async function fetchSaleItems(saleId: string) {
@@ -41,11 +109,11 @@ async function fetchSaleItems(saleId: string) {
     const accountId = getAccountId();
 
     let after: string | undefined = undefined;
-    let saleCurrency: string | null = null;
+    let saleCurrency: managementApiSchema.Currency | null = null;
     const items: SaleItemNode[] = [];
 
     while (true) {
-        const response = await client.query({
+        const response: SaleItemsQueryResponse = (await client.query({
             sale: {
                 __args: { accountId, id: saleId },
                 currency: true,
@@ -67,7 +135,7 @@ async function fetchSaleItems(saleId: string) {
                     },
                 },
             },
-        });
+        })) as unknown as SaleItemsQueryResponse;
 
         if (!response.sale) break;
         saleCurrency = saleCurrency ?? response.sale.currency ?? null;
@@ -88,7 +156,7 @@ async function fetchSaleItems(saleId: string) {
 async function ensureOrderForUser(params: {
     saleId: string;
     userId: string;
-    currency: string;
+    currency: managementApiSchema.Currency;
     orderLines: { itemId: string; amount: number; description: string }[];
 }): Promise<{ orderId: string; hasInvoice: boolean }> {
     const { saleId, userId, currency, orderLines } = params;
@@ -184,7 +252,7 @@ async function createStripeInvoice(params: {
     saleId: string;
     userId: string;
     bastaOrderId: string;
-    currency: string;
+    currency: managementApiSchema.Currency;
     lines: { itemId: string; amount: number; description: string }[];
 }) {
     const { saleId, userId, bastaOrderId, currency, lines } = params;
@@ -304,7 +372,30 @@ async function processSaleClosed(saleId: string) {
 
 export async function POST(request: NextRequest) {
     try {
-        const payload = (await request.json()) as BastaWebhook;
+        const signature = request.headers.get("x-basta-signature");
+        const secret = process.env.BASTA_WEBHOOK_SECRET;
+
+        if (!secret) {
+            return NextResponse.json({ error: "Webhook not configured" }, { status: 400 });
+        }
+        if (!signature) {
+            return NextResponse.json({ error: "Missing signature" }, { status: 400 });
+        }
+
+        const rawBody = await request.text();
+        const sigCheck = isSignatureValid({
+            rawBody,
+            signatureHeader: signature,
+            secret,
+        });
+        if (!sigCheck.valid) {
+            return NextResponse.json(
+                { error: sigCheck.reason },
+                { status: 401 }
+            );
+        }
+
+        const payload = JSON.parse(rawBody) as BastaWebhook;
         if (!payload?.idempotencyKey) {
             return NextResponse.json({ error: "Missing idempotencyKey" }, { status: 400 });
         }

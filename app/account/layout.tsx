@@ -3,7 +3,8 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { redirect } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { AuctionNav } from "@/components/auction-nav";
 import { AuctionFooter } from "@/components/auction-footer";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -37,9 +38,18 @@ export default function AccountLayout({
 }) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
+  const router = useRouter();
 
-  // Show loading state
-  if (status === "loading") {
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      const callback = encodeURIComponent(pathname || "/account");
+      router.replace(`/login?callbackUrl=${callback}`);
+    }
+  }, [router, status, pathname]);
+
+  // Show loading state (or pending redirect)
+  if (status === "loading" || status === "unauthenticated") {
     return (
       <div className="min-h-screen bg-background">
         <AuctionNav />
@@ -51,11 +61,6 @@ export default function AccountLayout({
         <AuctionFooter />
       </div>
     );
-  }
-
-  // Redirect if not authenticated
-  if (status === "unauthenticated") {
-    redirect("/login?callbackUrl=/account");
   }
 
   const user = session?.user;

@@ -1,22 +1,8 @@
 import Stripe from "stripe";
-import fs from "fs";
 import path from "path";
+import dotenv from "dotenv";
 
-function loadEnv() {
-    const env = { ...process.env };
-    const envPath = path.join(process.cwd(), ".env.local");
-    if (fs.existsSync(envPath)) {
-        const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-        for (const line of lines) {
-            if (!line || line.startsWith("#") || !line.includes("=")) continue;
-            const index = line.indexOf("=");
-            const key = line.slice(0, index);
-            const value = line.slice(index + 1);
-            if (!(key in env)) env[key] = value;
-        }
-    }
-    return env;
-}
+dotenv.config({ path: path.join(process.cwd(), ".env.local") });
 
 function createCookieJar() {
     const jar = new Map();
@@ -65,15 +51,25 @@ async function request(baseUrl, jar, method, url, options = {}) {
 }
 
 async function main() {
-    const env = loadEnv();
-    const baseUrl = env.NEXTAUTH_URL || "http://localhost:3000";
-    const userId = process.env.TEST_USER_ID || "1";
-
-    if (!env.STRIPE_SECRET_KEY) {
+    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+    if (!process.env.STRIPE_SECRET_KEY) {
         throw new Error("Missing STRIPE_SECRET_KEY");
     }
 
+    const password = process.env.TEST_PASSWORD || "Password123!";
+    const email =
+        process.env.TEST_EMAIL || `payment_flow_${Date.now()}@example.com`;
+    const name = process.env.TEST_NAME || "Payment Flow User";
+
     const jar = createCookieJar();
+
+    const signup = await request(baseUrl, jar, "POST", "/api/auth/signup", {
+        body: JSON.stringify({ email, password, name }),
+        headers: { "Content-Type": "application/json" },
+    });
+    if (!signup.res.ok && signup.res.status !== 409) {
+        throw new Error(`Signup failed: ${signup.res.status}`);
+    }
 
     const csrf = await request(baseUrl, jar, "GET", "/api/auth/csrf");
     const csrfToken = csrf.data?.csrfToken;
@@ -83,7 +79,8 @@ async function main() {
 
     const form = new URLSearchParams();
     form.set("csrfToken", csrfToken);
-    form.set("userId", userId);
+    form.set("email", email);
+    form.set("password", password);
     form.set("callbackUrl", baseUrl);
     form.set("json", "true");
     form.set("redirect", "false");
@@ -110,7 +107,7 @@ async function main() {
     }
     const setupIntentId = clientSecret.split("_secret_")[0];
 
-    const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const paymentMethod = await stripe.paymentMethods.create({
         type: "card",
         card: { token: "tok_visa" },
@@ -156,6 +153,14 @@ async function main() {
         console.log("- Bidder token issued");
     } else if (tokenRes.data?.error) {
         console.log(`- Bidder token error: ${tokenRes.data.error}`);
+    }
+
+    if (process.env.CLEANUP === "1") {
+        const del = await request(baseUrl, jar, "POST", "/api/account/delete", {
+            body: JSON.stringify({}),
+            headers: { "Content-Type": "application/json" },
+        });
+        console.log(`- Cleanup status: ${del.res.status}`);
     }
 }
 

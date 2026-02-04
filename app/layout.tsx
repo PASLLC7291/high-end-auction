@@ -4,6 +4,8 @@ import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Providers } from "@/components/providers"
 import { Toaster } from "@/components/ui/toaster"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
 import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -34,15 +36,17 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const session = await getServerSession(authOptions)
+
   return (
     <html lang="en">
       <body className={`font-sans antialiased`}>
-        <Providers>
+        <Providers session={session}>
           {children}
         </Providers>
         <Toaster />

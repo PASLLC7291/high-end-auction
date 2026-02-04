@@ -1,5 +1,6 @@
 import { AuctionNav } from "@/components/auction-nav";
 import { AuctionFooter } from "@/components/auction-footer";
+import { ConsultationForm } from "@/components/forms/consultation-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -133,9 +134,11 @@ export default function ServicesPage() {
                             institutions worldwide.
                         </p>
                         <div className="mt-8 flex flex-wrap justify-center gap-4">
-                            <Button size="lg">Schedule a Consultation</Button>
-                            <Button size="lg" variant="outline">
-                                Contact a Specialist
+                            <Button size="lg" asChild>
+                                <a href="#consultation-form">Schedule a Consultation</a>
+                            </Button>
+                            <Button size="lg" variant="outline" asChild>
+                                <Link href="/contact">Contact a Specialist</Link>
                             </Button>
                         </div>
                     </div>
@@ -289,7 +292,10 @@ export default function ServicesPage() {
                         </div>
                     </div>
 
-                    <div className="rounded-xl border border-border/50 bg-muted/10 p-8">
+                    <div
+                        id="consultation-form"
+                        className="rounded-xl border border-border/50 bg-muted/10 p-8"
+                    >
                         <h3 className="font-serif text-xl font-medium">
                             Request a Consultation
                         </h3>
@@ -297,59 +303,9 @@ export default function ServicesPage() {
                             Fill out the form and a specialist will contact you shortly.
                         </p>
 
-                        <form className="mt-6 space-y-4">
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <div>
-                                    <label className="text-sm font-medium">First Name</label>
-                                    <input
-                                        type="text"
-                                        className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                        placeholder="John"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium">Last Name</label>
-                                    <input
-                                        type="text"
-                                        className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                        placeholder="Doe"
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="text-sm font-medium">Email</label>
-                                <input
-                                    type="email"
-                                    className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                    placeholder="john@example.com"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="text-sm font-medium">Service Interest</label>
-                                <select className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20">
-                                    <option value="">Select a service...</option>
-                                    <option value="consignment">Consignment</option>
-                                    <option value="valuation">Valuations & Appraisals</option>
-                                    <option value="private-sales">Private Sales</option>
-                                    <option value="collection">Collection Management</option>
-                                    <option value="other">Other</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="text-sm font-medium">Message</label>
-                                <textarea
-                                    className="mt-1.5 h-24 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                    placeholder="Tell us about your collection or inquiry..."
-                                />
-                            </div>
-
-                            <Button type="submit" className="w-full">
-                                Submit Request
-                            </Button>
-                        </form>
+                        <div className="mt-6">
+                            <ConsultationForm />
+                        </div>
                     </div>
                 </div>
             </section>
@@ -358,4 +314,3 @@ export default function ServicesPage() {
         </div>
     );
 }
-

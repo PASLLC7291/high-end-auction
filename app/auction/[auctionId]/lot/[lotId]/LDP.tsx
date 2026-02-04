@@ -33,6 +33,7 @@ import {
   BellOff,
   Share2,
   Check,
+  Heart,
   Loader2,
   ChevronLeft,
   ChevronRight,
@@ -229,7 +230,6 @@ export default function LotDetailPage({
     lotData.nextAsks[0]?.toString() || ""
   );
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
-  const [registrations, setRegistrations] = useState<SaleRegistration[]>();
   const [isPlacingBid, setIsPlacingBid] = useState(false);
   const [hasPaymentMethod, setHasPaymentMethod] = useState(false);
   const [paymentStatusLoading, setPaymentStatusLoading] = useState(true);
@@ -238,8 +238,12 @@ export default function LotDetailPage({
   const [pendingBidAmount, setPendingBidAmount] = useState<number | null>(null);
   const [isNotificationEnabled, setIsNotificationEnabled] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [isWatchlisted, setIsWatchlisted] = useState(false);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
 
-  const isRegistered = (saleData?.userSaleRegistrations || []).length > 0;
+  const registrationStatus = saleData?.userSaleRegistrations?.[0]?.status ?? null;
+  const isRegistered = registrationStatus === "ACCEPTED";
+  const isRegistrationPending = registrationStatus === "PENDING";
   const [isExpired, setIsExpired] = useState(() => {
     // Initial check without causing re-renders
     if (!lotData.closingDate) return false;
@@ -261,6 +265,27 @@ export default function LotDetailPage({
 
     loadPaymentStatus();
   }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!session?.user) {
+        setIsWatchlisted(false);
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/account/watchlist/contains?saleId=${encodeURIComponent(auctionId)}&itemId=${encodeURIComponent(lotId)}`
+        );
+        const data = await res.json();
+        setIsWatchlisted(Boolean(data?.watchlisted));
+      } catch {
+        // Non-blocking
+      }
+    };
+
+    load();
+  }, [auctionId, lotId, session?.user]);
 
   // Memoize the callback to prevent unnecessary re-renders
   const handleExpiredChange = useCallback((expired: boolean) => {
@@ -306,9 +331,19 @@ export default function LotDetailPage({
         throw new Error(bidResult.error || "Failed to place bid");
       }
 
+      toast({
+        title: "Bid placed",
+        description: "Your bid has been submitted.",
+      });
       router.refresh();
     } catch (error) {
       console.error("Error placing bid:", error);
+      toast({
+        title: "Bid failed",
+        description:
+          error instanceof Error ? error.message : "Unable to place bid.",
+        variant: "destructive",
+      });
     } finally {
       setIsPlacingBid(false);
     }
@@ -328,16 +363,36 @@ export default function LotDetailPage({
     }
 
     if (!isRegistered) {
+      if (isRegistrationPending) {
+        toast({
+          title: "Registration pending",
+          description: "Your registration is pending approval for this auction.",
+        });
+        return;
+      }
       setRegistrationModalOpen(true);
       return;
     }
 
     if (!session.bidderToken) {
-      console.error("No bidder token available");
+      toast({
+        title: "Bidding unavailable",
+        description:
+          "No bidder token available. Please try again, or re-add your payment method.",
+        variant: "destructive",
+      });
       return;
     }
 
     const bidAmount = parseInt(selectedBid, 10);
+    if (!Number.isFinite(bidAmount) || bidAmount <= 0) {
+      toast({
+        title: "Select a bid amount",
+        description: "Please choose a valid bid amount before placing a bid.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     // Check if user already has a bid and is trying to increase their max bid
     const latestUserBid = lotData.userBids?.[lotData.userBids.length - 1];
@@ -396,6 +451,44 @@ export default function LotDetailPage({
         description: "Please copy the URL manually",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleToggleWatchlist = async () => {
+    if (!session?.user) {
+      const callbackUrl = `/auction/${auctionId}/lot/${params.lotId}`;
+      router.push(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+      return;
+    }
+
+    setWatchlistLoading(true);
+    try {
+      const method = isWatchlisted ? "DELETE" : "POST";
+      const res = await fetch("/api/account/watchlist", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saleId: auctionId, itemId: lotId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update watchlist");
+      }
+
+      setIsWatchlisted(!isWatchlisted);
+      toast({
+        title: !isWatchlisted ? "Added to watchlist" : "Removed from watchlist",
+        description: !isWatchlisted
+          ? "This lot will appear in your watchlist."
+          : "This lot has been removed from your watchlist.",
+      });
+    } catch (error) {
+      toast({
+        title: "Watchlist update failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setWatchlistLoading(false);
     }
   };
 
@@ -545,15 +638,15 @@ export default function LotDetailPage({
                 </div>
 
                 {/* Estimate */}
-                {(lotData.lowEstimate > 0 || lotData.highEstimate > 0) && (
+                {((lotData.lowEstimate ?? 0) > 0 || (lotData.highEstimate ?? 0) > 0) && (
                   <div>
                     <p className="text-muted-foreground">Estimate</p>
                     <p className="font-semibold">
-                      {lotData.lowEstimate > 0 && lotData.highEstimate > 0
-                        ? `${formatCurrency(lotData.lowEstimate)} – ${formatCurrency(lotData.highEstimate)}`
-                        : lotData.lowEstimate > 0
-                          ? `From ${formatCurrency(lotData.lowEstimate)}`
-                          : `Up to ${formatCurrency(lotData.highEstimate)}`
+                      {(lotData.lowEstimate ?? 0) > 0 && (lotData.highEstimate ?? 0) > 0
+                        ? `${formatCurrency(lotData.lowEstimate ?? 0)} – ${formatCurrency(lotData.highEstimate ?? 0)}`
+                        : (lotData.lowEstimate ?? 0) > 0
+                          ? `From ${formatCurrency(lotData.lowEstimate ?? 0)}`
+                          : `Up to ${formatCurrency(lotData.highEstimate ?? 0)}`
                       }
                     </p>
                   </div>
@@ -604,6 +697,16 @@ export default function LotDetailPage({
 
               {/* Action Buttons */}
               <div className="flex gap-2 mb-6">
+                <Button
+                  variant={isWatchlisted ? "default" : "secondary"}
+                  size="icon"
+                  className="rounded-full h-10 w-10 transition-all"
+                  onClick={handleToggleWatchlist}
+                  disabled={watchlistLoading}
+                  title={isWatchlisted ? "Remove from watchlist" : "Add to watchlist"}
+                >
+                  <Heart className={`h-4 w-4 ${isWatchlisted ? "fill-current" : ""}`} />
+                </Button>
                 <Button
                   variant={isNotificationEnabled ? "default" : "secondary"}
                   size="icon"
@@ -673,7 +776,6 @@ export default function LotDetailPage({
                   onClick={handlePlaceBid}
                   disabled={
                     paymentStatusLoading ||
-                    !hasPaymentMethod ||
                     isPlacingBid ||
                     lotData.status === "ITEM_CLOSED" ||
                     lotData.status === "ITEM_NOT_OPEN"
@@ -688,7 +790,9 @@ export default function LotDetailPage({
                       ? "Not Yet Open"
                       : lotData.status === "ITEM_CLOSED"
                         ? "Bidding Closed"
-                        : session?.user && !isRegistered
+                        : session?.user && isRegistrationPending
+                          ? "Registration Pending"
+                          : session?.user && !isRegistered
                           ? "Register to Place Bid"
                           : paymentStatusLoading
                             ? "Checking Payment..."
@@ -964,7 +1068,10 @@ export default function LotDetailPage({
         auctionId={auctionId}
         auctionTitle={saleData.title}
         onRegistrationComplete={(registration) => {
-          setRegistrations([...(registrations ?? []), registration]);
+          setSaleData((prev) => ({
+            ...prev,
+            userSaleRegistrations: [...(prev.userSaleRegistrations ?? []), registration],
+          }));
         }}
       />
 

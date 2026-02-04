@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Gavel, Mail, Phone, MapPin, Shield, Lock, Award } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { NewsletterSignup } from "@/components/forms/newsletter-signup";
 
 const footerLinks = {
   auctions: {
@@ -92,16 +91,7 @@ export function AuctionFooter() {
               <p className="mt-1 text-sm text-muted-foreground">
                 Get auction alerts and collecting insights.
               </p>
-              <form className="mt-3 flex gap-2">
-                <Input
-                  type="email"
-                  placeholder="Enter your email"
-                  className="flex-1"
-                />
-                <Button type="submit" size="default">
-                  Subscribe
-                </Button>
-              </form>
+              <NewsletterSignup />
             </div>
 
             {/* Contact info */}

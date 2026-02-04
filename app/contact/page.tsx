@@ -1,10 +1,8 @@
 import { AuctionNav } from "@/components/auction-nav";
 import { AuctionFooter } from "@/components/auction-footer";
+import { ContactForm } from "@/components/forms/contact-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Phone,
   Mail,
@@ -125,62 +123,7 @@ export default function ContactPage() {
 
             <Card className="border-border/50">
               <CardContent className="p-6">
-                <form className="space-y-5">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="firstName">First Name *</Label>
-                      <Input id="firstName" placeholder="John" required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lastName">Last Name *</Label>
-                      <Input id="lastName" placeholder="Smith" required />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email *</Label>
-                    <Input id="email" type="email" placeholder="john@example.com" required />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone</Label>
-                    <Input id="phone" type="tel" placeholder="(555) 123-4567" />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="inquiryType">Inquiry Type *</Label>
-                    <select
-                      id="inquiryType"
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      required
-                    >
-                      <option value="">Select an option</option>
-                      {inquiryTypes.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="message">Message *</Label>
-                    <Textarea
-                      id="message"
-                      placeholder="How can we help you?"
-                      rows={5}
-                      required
-                    />
-                  </div>
-
-                  <Button type="submit" size="lg" className="w-full">
-                    Send Message
-                  </Button>
-
-                  <p className="text-xs text-center text-muted-foreground">
-                    We typically respond within 1 business day. Your information is kept confidential.
-                  </p>
-                </form>
+                <ContactForm inquiryTypes={inquiryTypes} />
               </CardContent>
             </Card>
           </div>

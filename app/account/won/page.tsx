@@ -1,115 +1,110 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Trophy,
-  Package,
-  Truck,
-  CheckCircle,
   Receipt,
+  Package,
+  CheckCircle,
+  AlertCircle,
   ExternalLink,
 } from "lucide-react";
 
-// Mock data
-const mockWonItems = [
-  {
-    id: "1",
-    lotId: "lot-1",
-    auctionId: "auction-1",
-    lotTitle: "French Empire Ormolu Clock",
-    auctionTitle: "European Decorative Arts",
-    image: "/placeholder.svg",
-    hammerPrice: 4200,
-    totalPrice: 5250, // Including buyer's premium
-    wonDate: "2024-02-01T16:30:00Z",
-    lotNumber: 67,
-    status: "shipped" as const,
-    trackingNumber: "1Z999AA10123456784",
-  },
-  {
-    id: "2",
-    lotId: "lot-2",
-    auctionId: "auction-2",
-    lotTitle: "Pair of Regency Dining Chairs",
-    auctionTitle: "Fine Furniture Sale",
-    image: "/placeholder.svg",
-    hammerPrice: 1800,
-    totalPrice: 2250,
-    wonDate: "2024-01-28T14:00:00Z",
-    lotNumber: 23,
-    status: "delivered" as const,
-  },
-  {
-    id: "3",
-    lotId: "lot-3",
-    auctionId: "auction-3",
-    lotTitle: "Sterling Silver Candelabra",
-    auctionTitle: "Silver & Objects of Vertu",
-    image: "/placeholder.svg",
-    hammerPrice: 950,
-    totalPrice: 1187,
-    wonDate: "2024-02-05T12:00:00Z",
-    lotNumber: 112,
-    status: "pending" as const,
-  },
-];
+type WonItemView = {
+  saleId: string;
+  itemId: string;
+  lotNumber?: number;
+  lotTitle?: string;
+  image?: string;
+  hammerPrice?: number | null;
+  currency?: string | null;
+  itemStatus?: string | null;
+  closingDate?: string | null;
+};
 
-function formatCurrency(cents: number) {
+type WonOrderView = {
+  bastaOrderId: string;
+  saleId: string;
+  auctionTitle?: string;
+  status?: string | null;
+  stripeInvoiceUrl?: string | null;
+  stripeInvoiceId?: string | null;
+  createdAt: string;
+  items: WonItemView[];
+};
+
+function formatCurrency(cents: number | null | undefined, currency: string = "USD") {
+  if (cents == null) return "";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: 0,
   }).format(cents / 100);
 }
 
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function getStatusBadge(status: string) {
+function getStatusBadge(status?: string | null) {
   switch (status) {
-    case "pending":
+    case "PAID":
+      return (
+        <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Paid
+        </Badge>
+      );
+    case "INVOICE_ISSUED":
       return (
         <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
           <Receipt className="h-3 w-3 mr-1" />
-          Awaiting Payment
+          Invoice Ready
         </Badge>
       );
-    case "paid":
+    case "PAYMENT_FAILED":
+      return (
+        <Badge variant="destructive" className="bg-red-100 text-red-700 hover:bg-red-100">
+          <AlertCircle className="h-3 w-3 mr-1" />
+          Payment Failed
+        </Badge>
+      );
+    case "OPEN":
+    default:
       return (
         <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
           <Package className="h-3 w-3 mr-1" />
           Processing
         </Badge>
       );
-    case "shipped":
-      return (
-        <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-          <Truck className="h-3 w-3 mr-1" />
-          Shipped
-        </Badge>
-      );
-    case "delivered":
-      return (
-        <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
-          <CheckCircle className="h-3 w-3 mr-1" />
-          Delivered
-        </Badge>
-      );
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
   }
 }
 
 export default function WonItemsPage() {
-  const totalValue = mockWonItems.reduce((sum, item) => sum + item.totalPrice, 0);
+  const [orders, setOrders] = useState<WonOrderView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch("/api/account/won");
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to load purchases");
+        }
+        setOrders(Array.isArray(data.orders) ? data.orders : []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load purchases");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const items = useMemo(() => orders.flatMap((o) => o.items.map((i) => ({ order: o, item: i }))), [orders]);
+  const totalValue = useMemo(() => items.reduce((sum, row) => sum + (row.item.hammerPrice ?? 0), 0), [items]);
 
   return (
     <div className="space-y-6">
@@ -117,12 +112,28 @@ export default function WonItemsPage() {
         <div>
           <h2 className="text-2xl font-semibold">Won Items</h2>
           <p className="text-muted-foreground mt-1">
-            {mockWonItems.length} items • {formatCurrency(totalValue)} total
+            {items.length} items • {formatCurrency(totalValue)} total hammer
           </p>
         </div>
       </div>
 
-      {mockWonItems.length === 0 ? (
+      {loading ? (
+        <Card className="border-border/50">
+          <CardContent className="py-12 text-center">
+            <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="mt-4 text-muted-foreground">Loading won items…</p>
+          </CardContent>
+        </Card>
+      ) : error ? (
+        <Card className="border-border/50">
+          <CardContent className="py-10 text-center">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      ) : items.length === 0 ? (
         <Card className="border-border/50">
           <CardContent className="py-12 text-center">
             <Trophy className="h-12 w-12 mx-auto text-muted-foreground/40" />
@@ -137,67 +148,56 @@ export default function WonItemsPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {mockWonItems.map((item) => (
-            <Card key={item.id} className="border-border/50 overflow-hidden">
+          {items.map(({ order, item }) => (
+            <Card key={`${order.bastaOrderId}:${item.itemId}`} className="border-border/50 overflow-hidden">
               <CardContent className="p-0">
                 <div className="flex flex-col sm:flex-row">
-                  {/* Image */}
                   <div className="sm:w-40 h-40 sm:h-auto bg-muted shrink-0">
                     <img
-                      src={item.image}
-                      alt={item.lotTitle}
+                      src={item.image || "/placeholder.svg"}
+                      alt={item.lotTitle || "Lot image"}
                       className="h-full w-full object-cover"
                     />
                   </div>
 
-                  {/* Content */}
                   <div className="flex-1 p-4 flex flex-col sm:flex-row gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="outline">Lot {item.lotNumber}</Badge>
-                        {getStatusBadge(item.status)}
+                        <Badge variant="outline">Lot {item.lotNumber ?? "—"}</Badge>
+                        {getStatusBadge(order.status)}
                       </div>
-                      <h3 className="font-medium mt-2 line-clamp-1">{item.lotTitle}</h3>
+                      <h3 className="font-medium mt-2 line-clamp-1">{item.lotTitle || "Untitled lot"}</h3>
                       <p className="text-sm text-muted-foreground line-clamp-1">
-                        {item.auctionTitle}
+                        {order.auctionTitle || "Auction"}
                       </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Won on {formatDate(item.wonDate)}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Order {order.bastaOrderId}
                       </p>
-
-                      {item.trackingNumber && (
-                        <p className="text-sm mt-2">
-                          <span className="text-muted-foreground">Tracking: </span>
-                          <span className="font-mono">{item.trackingNumber}</span>
-                        </p>
-                      )}
                     </div>
 
-                    {/* Price & Actions */}
                     <div className="sm:text-right shrink-0">
                       <div className="text-sm">
-                        <p className="text-muted-foreground">Hammer Price</p>
-                        <p className="font-medium">{formatCurrency(item.hammerPrice)}</p>
-                      </div>
-                      <div className="text-sm mt-2">
-                        <p className="text-muted-foreground">Total (incl. premium)</p>
-                        <p className="text-lg font-semibold">{formatCurrency(item.totalPrice)}</p>
+                        <p className="text-muted-foreground">Hammer</p>
+                        <p className="text-lg font-semibold">
+                          {formatCurrency(item.hammerPrice ?? null, item.currency || "USD")}
+                        </p>
                       </div>
 
                       <div className="flex gap-2 mt-4 sm:justify-end">
-                        {item.status === "pending" && (
-                          <Button size="sm">
-                            Pay Now
+                        {order.stripeInvoiceUrl && (
+                          <Button
+                            asChild
+                            size="sm"
+                            variant={order.status === "PAID" ? "outline" : "default"}
+                          >
+                            <a href={order.stripeInvoiceUrl} target="_blank" rel="noreferrer">
+                              {order.status === "PAID" ? "View Invoice" : "Pay / View Invoice"}
+                            </a>
                           </Button>
                         )}
-                        {item.status === "shipped" && (
+                        <Link href={`/auction/${order.saleId}/lot/${item.itemId}`}>
                           <Button variant="outline" size="sm">
-                            Track Package
-                          </Button>
-                        )}
-                        <Link href={`/auction/${item.auctionId}/lot/${item.lotId}`}>
-                          <Button variant="outline" size="sm">
-                            <ExternalLink className="h-3 w-3" />
+                            <ExternalLink className="h-3.5 w-3.5" />
                           </Button>
                         </Link>
                       </div>
@@ -210,8 +210,7 @@ export default function WonItemsPage() {
         </div>
       )}
 
-      {/* Summary Card */}
-      {mockWonItems.length > 0 && (
+      {!loading && items.length > 0 && (
         <Card className="border-border/50 bg-section-alt">
           <CardContent className="p-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -231,3 +230,4 @@ export default function WonItemsPage() {
     </div>
   );
 }
+

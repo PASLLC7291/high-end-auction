@@ -7,7 +7,14 @@
     "dev": "next dev",
     "lint": "eslint .",
     "start": "next start",
-    "db:init": "tsx scripts/init-db.ts"
+    "test:e2e": "playwright test",
+    "db:init": "tsx scripts/init-db.ts",
+    "auction:upload": "tsx scripts/bulk-upload-auction.ts",
+    "basta:webhooks:sync": "tsx scripts/sync-basta-webhooks.ts",
+    "balance:grant": "tsx scripts/grant-balance.ts",
+    "balance:promo:create": "tsx scripts/create-balance-promo.ts",
+    "balance:verify": "node scripts/verify-balance-flow.mjs",
+    "payment:verify": "node scripts/verify-payment-flow.mjs"
   },
   "dependencies": {
     "@bastaai/basta-js": "1.0.0-alpha.7",
@@ -72,12 +79,14 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.1",
     "@tailwindcss/postcss": "^4.1.9",
     "@types/bcryptjs": "^3.0.0",
     "@types/luxon": "3.7.1",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.2.3",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tsx": "^4.21.0",

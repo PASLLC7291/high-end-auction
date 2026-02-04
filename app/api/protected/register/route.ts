@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { saleId } = body;
+        const { saleId, identifier } = body as { saleId?: string; identifier?: string };
 
         if (!saleId) {
             return NextResponse.json(
@@ -36,8 +36,10 @@ export async function POST(request: NextRequest) {
                         saleId: saleId,
                         userId: session.user.id,
                         type: "ONLINE",
-                        identifier: "",
-                        status: "ACCEPTED"
+                        identifier: identifier?.trim() ? identifier.trim() : null,
+                        // For bidder-facing registration flows we auto-accept to avoid manual approval loops.
+                        // If you want registrations to be reviewed first, remove this and handle PENDING states in the UI.
+                        status: "ACCEPTED",
                     }
                 },
                 id: true,

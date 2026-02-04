@@ -14,9 +14,14 @@ out/
 db/*.db
 db/*.db-shm
 db/*.db-wal
+db/uploads/
 
 # Build
 *.tsbuildinfo
+
+# Playwright
+test-results/
+playwright-report/
 
 # OS
 .DS_Store

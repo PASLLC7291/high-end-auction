@@ -196,8 +196,9 @@ export default function AuctionDetailPage({
   );
 
   // Check if user is registered for this auction
-  const isRegistered = userRegistrations.length > 0;
-  const registrationStatus = userRegistrations[0]?.status;
+  const registrationStatus = userRegistrations[0]?.status ?? null;
+  const isRegistered = registrationStatus === "ACCEPTED";
+  const isRegistrationPending = registrationStatus === "PENDING";
 
   // Handle register button click - redirect to login if not authenticated
   const handleRegisterClick = () => {
@@ -251,6 +252,9 @@ export default function AuctionDetailPage({
 
   // Fetch filtered lots when filters or sort change
   useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
     const loadFilteredLots = async () => {
       // Wait for session to load before making API calls (to get bidder token)
       if (sessionStatus === "loading") {
@@ -280,15 +284,17 @@ export default function AuctionDetailPage({
         });
         const startIndex = (filters.currentPage - 1) * itemsPerPage;
         const endIndex = startIndex + itemsPerPage;
-        setLots(filtered.slice(startIndex, endIndex));
-        setFilteredTotal(filtered.length);
+        if (active) {
+          setLots(filtered.slice(startIndex, endIndex));
+          setFilteredTotal(filtered.length);
+        }
         return;
       }
 
       // Always make API call when we have an accountId
       setLoading(true);
       try {
-        const client = getClientApiClient(session?.bidderToken);
+        const client = getClientApiClient(session?.bidderToken, { signal: controller.signal });
 
         // Use the reusable filter builder with range support
         const filterBy = buildTypesenseFilter(
@@ -339,7 +345,7 @@ export default function AuctionDetailPage({
                 },
               },
             },
-            pageInfo: {
+              pageInfo: {
               totalRecords: true,
               hasNextPage: true,
             },
@@ -371,18 +377,30 @@ export default function AuctionDetailPage({
             })
             .filter((lot): lot is Lot => lot !== null) || []) as Lot[];
 
-        setLots(fetchedLots);
-        setFilteredTotal(searchResult?.pageInfo?.totalRecords || 0);
+        if (active) {
+          setLots(fetchedLots);
+          setFilteredTotal(searchResult?.pageInfo?.totalRecords || 0);
+        }
       } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
         console.error("Error fetching filtered lots:", error);
         setLots([]);
         setFilteredTotal(0);
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
     loadFilteredLots();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [
     filtersKey,
     filters.sortBy,
@@ -571,18 +589,19 @@ export default function AuctionDetailPage({
               </div>
             </div>
             {derivedStatus !== "CLOSED" &&
-              derivedStatus !== "PROCESSING" && (
+                  derivedStatus !== "PROCESSING" && (
                 <div className="hidden flex-col items-end gap-2 md:flex">
                   {isRegistered ? (
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-500" />
                       <span className="text-sm">
-                        {registrationStatus === "APPROVED"
-                          ? "Registered"
-                          : registrationStatus === "PENDING"
-                            ? "Pending approval"
-                            : "Registered"}
+                        Registered
                       </span>
+                    </div>
+                  ) : isRegistrationPending ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Clock className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                      <span className="text-sm">Pending approval</span>
                     </div>
                   ) : (
                     <Button size="lg" onClick={handleRegisterClick}>

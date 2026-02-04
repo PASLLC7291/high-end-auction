@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { Clock } from "lucide-react";
-import { SaleItemDataType } from "./page";
+import type { Lot } from "./lot-types";
 
 /**
  * Animated indicator that morphs between a dot and a plus sign
@@ -119,7 +119,7 @@ interface CountdownDisplayProps {
     onExpiredChange?: (isExpired: boolean) => void;
     variant?: "compact" | "detailed";
     size?: "sm" | "default";
-    status: SaleItemDataType["status"];
+    status: Lot["status"];
     showLabel?: boolean;
 }
 

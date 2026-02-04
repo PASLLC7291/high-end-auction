@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,53 +13,27 @@ import {
   Gavel,
 } from "lucide-react";
 
-// Mock data
-const mockWatchlist = [
-  {
-    id: "1",
-    lotId: "lot-1",
-    auctionId: "auction-1",
-    lotTitle: "Art Deco Diamond Ring",
-    auctionTitle: "Fine Jewelry Collection",
-    image: "/placeholder.svg",
-    currentBid: 3200,
-    estimate: { low: 2500, high: 3500 },
-    closingDate: "2024-02-16T16:00:00Z",
-    lotNumber: 28,
-    status: "open",
-  },
-  {
-    id: "2",
-    lotId: "lot-2",
-    auctionId: "auction-2",
-    lotTitle: "Georgian Silver Tea Service",
-    auctionTitle: "Silver & Decorative Arts",
-    image: "/placeholder.svg",
-    currentBid: 1800,
-    estimate: { low: 1500, high: 2500 },
-    closingDate: "2024-02-17T14:00:00Z",
-    lotNumber: 45,
-    status: "open",
-  },
-  {
-    id: "3",
-    lotId: "lot-3",
-    auctionId: "auction-3",
-    lotTitle: "Contemporary Bronze Sculpture",
-    auctionTitle: "Modern & Contemporary Art",
-    image: "/placeholder.svg",
-    currentBid: 0,
-    estimate: { low: 5000, high: 7000 },
-    closingDate: "2024-02-20T12:00:00Z",
-    lotNumber: 12,
-    status: "upcoming",
-  },
-];
+type WatchlistItem = {
+  id: string;
+  saleId: string;
+  itemId: string;
+  lotNumber?: number;
+  lotTitle?: string;
+  auctionTitle?: string;
+  image?: string;
+  currency?: string | null;
+  currentBid?: number | null;
+  startingBid?: number | null;
+  lowEstimate?: number | null;
+  highEstimate?: number | null;
+  closingDate?: string | null;
+  status?: string;
+};
 
-function formatCurrency(cents: number) {
+function formatCurrency(cents: number, currency: string = "USD") {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: 0,
   }).format(cents / 100);
 }
@@ -78,9 +53,45 @@ function getTimeRemaining(dateString: string) {
 }
 
 export default function WatchlistPage() {
-  const handleRemove = (id: string) => {
-    // Would remove from watchlist via API
-    console.log("Remove from watchlist:", id);
+  const [items, setItems] = useState<WatchlistItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const count = useMemo(() => items.length, [items.length]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch("/api/account/watchlist");
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to load watchlist");
+        }
+        setItems(Array.isArray(data.items) ? data.items : []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load watchlist");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const handleRemove = async (saleId: string, itemId: string) => {
+    try {
+      const res = await fetch("/api/account/watchlist", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saleId, itemId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to remove item");
+      }
+      setItems((prev) => prev.filter((i) => !(i.saleId === saleId && i.itemId === itemId)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove item");
+    }
   };
 
   return (
@@ -88,11 +99,27 @@ export default function WatchlistPage() {
       <div>
         <h2 className="text-2xl font-semibold">Watchlist</h2>
         <p className="text-muted-foreground mt-1">
-          Items you're following ({mockWatchlist.length})
+          Items you're following ({count})
         </p>
       </div>
 
-      {mockWatchlist.length === 0 ? (
+      {loading ? (
+        <Card className="border-border/50">
+          <CardContent className="py-12 text-center">
+            <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="mt-4 text-muted-foreground">Loading watchlist…</p>
+          </CardContent>
+        </Card>
+      ) : error ? (
+        <Card className="border-border/50">
+          <CardContent className="py-10 text-center">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      ) : items.length === 0 ? (
         <Card className="border-border/50">
           <CardContent className="py-12 text-center">
             <Heart className="h-12 w-12 mx-auto text-muted-foreground/40" />
@@ -107,64 +134,74 @@ export default function WatchlistPage() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {mockWatchlist.map((item) => (
-            <Card key={item.id} className="border-border/50 overflow-hidden group">
+          {items.map((item) => {
+            const currency = item.currency || "USD";
+            return (
+              <Card key={item.id} className="border-border/50 overflow-hidden group">
               <div className="relative aspect-square bg-muted">
                 <img
-                  src={item.image}
-                  alt={item.lotTitle}
+                  src={item.image || "/placeholder.svg"}
+                  alt={item.lotTitle || "Lot image"}
                   className="h-full w-full object-cover"
                 />
                 <Button
                   variant="ghost"
                   size="icon"
                   className="absolute top-2 right-2 h-8 w-8 bg-background/80 hover:bg-background opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => handleRemove(item.id)}
+                  onClick={() => handleRemove(item.saleId, item.itemId)}
+                  title="Remove from watchlist"
+                  aria-label="Remove from watchlist"
                 >
                   <Trash2 className="h-4 w-4 text-muted-foreground" />
                 </Button>
                 <div className="absolute bottom-2 left-2">
                   <Badge variant="secondary" className="bg-background/80">
-                    Lot {item.lotNumber}
+                    Lot {item.lotNumber ?? "—"}
                   </Badge>
                 </div>
               </div>
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground line-clamp-1">
-                  {item.auctionTitle}
+                  {item.auctionTitle || "Auction"}
                 </p>
                 <h3 className="font-medium mt-1 line-clamp-2 min-h-[2.5rem]">
-                  {item.lotTitle}
+                  {item.lotTitle || "Untitled lot"}
                 </h3>
 
                 <div className="mt-3 space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Estimate</span>
                     <span>
-                      {formatCurrency(item.estimate.low)} – {formatCurrency(item.estimate.high)}
+                      {item.lowEstimate != null && item.highEstimate != null
+                        ? `${formatCurrency(item.lowEstimate, currency)} – ${formatCurrency(item.highEstimate, currency)}`
+                        : "—"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Current</span>
                     <span className="font-medium">
-                      {item.currentBid > 0 ? formatCurrency(item.currentBid) : "No bids"}
+                      {(item.currentBid ?? 0) > 0
+                        ? formatCurrency(item.currentBid as number, currency)
+                        : item.startingBid
+                          ? `Start ${formatCurrency(item.startingBid, currency)}`
+                          : "No bids"}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1 mt-3 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" />
-                  <span>{getTimeRemaining(item.closingDate)}</span>
+                  <span>{item.closingDate ? getTimeRemaining(item.closingDate) : "—"}</span>
                 </div>
 
                 <div className="flex gap-2 mt-4">
-                  <Link href={`/auction/${item.auctionId}/lot/${item.lotId}`} className="flex-1">
+                  <Link href={`/auction/${item.saleId}/lot/${item.itemId}`} className="flex-1">
                     <Button className="w-full" size="sm">
                       <Gavel className="h-4 w-4 mr-1" />
                       Bid Now
                     </Button>
                   </Link>
-                  <Link href={`/auction/${item.auctionId}/lot/${item.lotId}`}>
+                  <Link href={`/auction/${item.saleId}/lot/${item.itemId}`}>
                     <Button variant="outline" size="sm">
                       <ExternalLink className="h-4 w-4" />
                     </Button>
@@ -172,7 +209,8 @@ export default function WatchlistPage() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

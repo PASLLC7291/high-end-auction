@@ -76,6 +76,7 @@ export function PageHero({ title, subtitle, children, className }: PageHeroProps
  * Section - Consistent section wrapper
  */
 interface SectionProps {
+  id?: string;
   children: React.ReactNode;
   className?: string;
   background?: "default" | "alt" | "highlight";
@@ -83,6 +84,7 @@ interface SectionProps {
 }
 
 export function Section({
+  id,
   children,
   className,
   background = "default",
@@ -101,7 +103,7 @@ export function Section({
   };
 
   return (
-    <section className={cn(bgClasses[background], sizeClasses[size], className)}>
+    <section id={id} className={cn(bgClasses[background], sizeClasses[size], className)}>
       <div className="container mx-auto px-4">{children}</div>
     </section>
   );

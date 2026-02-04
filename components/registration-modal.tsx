@@ -81,6 +81,7 @@ export function RegistrationModal({
                 credentials: "include",
                 body: JSON.stringify({
                     saleId: auctionId,
+                    identifier: formData.phone,
                 }),
             });
 
@@ -274,4 +275,3 @@ export function RegistrationModal({
 }
 
 export default RegistrationModal;
-

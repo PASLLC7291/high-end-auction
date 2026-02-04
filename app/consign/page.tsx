@@ -1,10 +1,8 @@
 import { AuctionNav } from "@/components/auction-nav";
 import { AuctionFooter } from "@/components/auction-footer";
+import { ValuationForm } from "@/components/forms/valuation-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Shield,
   TrendingUp,
@@ -403,83 +401,7 @@ export default function ConsignPage() {
 
           <Card className="border-border/50">
             <CardContent className="p-6 md:p-8">
-              <form className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="firstName">First Name *</Label>
-                    <Input id="firstName" placeholder="John" required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lastName">Last Name *</Label>
-                    <Input id="lastName" placeholder="Smith" required />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email *</Label>
-                    <Input id="email" type="email" placeholder="john@example.com" required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone</Label>
-                    <Input id="phone" type="tel" placeholder="(555) 123-4567" />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="category">Category *</Label>
-                  <select
-                    id="category"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    required
-                  >
-                    <option value="">Select a category</option>
-                    <option value="fine-art">Fine Art</option>
-                    <option value="antiques">Antiques & Decorative Arts</option>
-                    <option value="jewelry">Jewelry</option>
-                    <option value="watches">Watches</option>
-                    <option value="collectibles">Collectibles & Memorabilia</option>
-                    <option value="books">Books & Documents</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description *</Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Please describe your item(s), including artist/maker, approximate age, size, condition, and any known provenance..."
-                    rows={5}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Photos</Label>
-                  <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                    <Camera className="mx-auto h-8 w-8 text-muted-foreground" />
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Drag and drop images here, or click to browse
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      JPG, PNG up to 10MB each. Include multiple angles.
-                    </p>
-                    <input type="file" className="hidden" multiple accept="image/*" />
-                    <Button type="button" variant="outline" size="sm" className="mt-4">
-                      Select Files
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="pt-4">
-                  <Button type="submit" size="lg" className="w-full">
-                    Submit for Valuation
-                  </Button>
-                  <p className="mt-3 text-xs text-center text-muted-foreground">
-                    We typically respond within 2-3 business days. Your information is kept confidential.
-                  </p>
-                </div>
-              </form>
+              <ValuationForm />
             </CardContent>
           </Card>
         </div>
