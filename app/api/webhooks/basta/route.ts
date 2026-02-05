@@ -373,7 +373,7 @@ async function processSaleClosed(saleId: string) {
 export async function POST(request: NextRequest) {
     try {
         const signature = request.headers.get("x-basta-signature");
-        const secret = process.env.BASTA_WEBHOOK_SECRET;
+        const secret = process.env.BASTA_WEBHOOK_SECRET?.trim();
 
         if (!secret) {
             return NextResponse.json({ error: "Webhook not configured" }, { status: 400 });

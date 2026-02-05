@@ -4,7 +4,7 @@ let stripeInstance: Stripe | null = null;
 
 export function getStripe(): Stripe {
     if (!stripeInstance) {
-        const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+        const stripeSecretKey = process.env.STRIPE_SECRET_KEY?.trim();
         if (!stripeSecretKey) {
             throw new Error("Missing STRIPE_SECRET_KEY");
         }

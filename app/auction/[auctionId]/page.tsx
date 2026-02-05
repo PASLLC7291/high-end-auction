@@ -4,7 +4,8 @@ import { getClientApiClient } from "@/lib/basta-client";
 import { authOptions } from "@/lib/auth";
 
 async function getAuctionDetails(id: string, bidderToken?: string): Promise<Auction | null> {
-  if (!process.env.ACCOUNT_ID) {
+  const accountId = process.env.ACCOUNT_ID?.trim();
+  if (!accountId) {
     console.error("Missing env variable: ACCOUNT_ID");
     return null;
   }
@@ -49,7 +50,7 @@ async function getAuctionDetails(id: string, bidderToken?: string): Promise<Auct
     const searchData = await client.query({
       search: {
         __args: {
-          accountId: process.env.ACCOUNT_ID,
+          accountId,
           type: "ITEM",
           query: "*",
           filterBy: `saleId:${id}`,
@@ -138,7 +139,8 @@ async function getAuctionDetails(id: string, bidderToken?: string): Promise<Auct
 }
 
 async function getFacets(saleId: string, bidderToken?: string) {
-  if (!process.env.ACCOUNT_ID) {
+  const accountId = process.env.ACCOUNT_ID?.trim();
+  if (!accountId) {
     return [];
   }
 
@@ -148,7 +150,7 @@ async function getFacets(saleId: string, bidderToken?: string) {
     const searchData = await client.query({
       search: {
         __args: {
-          accountId: process.env.ACCOUNT_ID,
+          accountId,
           type: "ITEM",
           query: "*",
           filterBy: `saleId:${saleId}`,
@@ -188,7 +190,7 @@ export default async function AuctionDetailPage({
 
     if (auctionDetails === null) return "Something went wrong";
 
-    const accountId = process.env.ACCOUNT_ID || "";
+    const accountId = process.env.ACCOUNT_ID?.trim() || "";
 
     return <ADP auctionDetails={auctionDetails} facets={facets} accountId={accountId} />;
   } catch (error) {

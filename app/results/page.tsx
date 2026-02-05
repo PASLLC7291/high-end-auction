@@ -26,7 +26,8 @@ export const metadata = {
 
 // Fetch past auctions
 async function getPastAuctions() {
-  if (!process.env.ACCOUNT_ID) {
+  const accountId = process.env.ACCOUNT_ID?.trim();
+  if (!accountId) {
     return [];
   }
 
@@ -36,7 +37,7 @@ async function getPastAuctions() {
     const sales = await client.query({
       sales: {
         __args: {
-          accountId: process.env.ACCOUNT_ID,
+          accountId,
           first: 20,
           filter: {
             statuses: ["CLOSED", "PROCESSING"],

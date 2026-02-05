@@ -69,7 +69,7 @@ function isTokenExpired(expiration: string | undefined): boolean {
 }
 
 export const authOptions: NextAuthOptions = {
-    secret: process.env.NEXTAUTH_SECRET || "development-secret-change-in-production",
+    secret: process.env.NEXTAUTH_SECRET?.trim() || "development-secret-change-in-production",
     providers: [
         CredentialsProvider({
             name: "Email",

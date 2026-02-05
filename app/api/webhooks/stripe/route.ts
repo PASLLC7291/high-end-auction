@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
     const signature = request.headers.get("stripe-signature");
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
 
     if (!webhookSecret || !signature) {
         return NextResponse.json({ error: "Webhook not configured" }, { status: 400 });

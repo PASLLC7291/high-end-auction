@@ -51,7 +51,8 @@ function isTestAuction(title: string | undefined | null): boolean {
 }
 
 async function getAllAuctions(): Promise<Auction[]> {
-  if (!process.env.ACCOUNT_ID) {
+  const accountId = process.env.ACCOUNT_ID?.trim();
+  if (!accountId) {
     console.error("Missing env variable: ACCOUNT_ID");
     return [];
   }
@@ -61,7 +62,7 @@ async function getAllAuctions(): Promise<Auction[]> {
     const sales = await client.query({
       sales: {
         __args: {
-          accountId: process.env.ACCOUNT_ID,
+          accountId,
           first: 100,
           filter: { statuses: ["PUBLISHED", "OPENED", "LIVE", "CLOSING", "CLOSED"] },
         },

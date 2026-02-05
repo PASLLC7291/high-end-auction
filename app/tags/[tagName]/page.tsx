@@ -26,7 +26,8 @@ type TagItem = {
 };
 
 async function getItemsByTag(tagName: string, bidderToken?: string): Promise<TagItem[]> {
-    if (!process.env.ACCOUNT_ID) {
+    const accountId = process.env.ACCOUNT_ID?.trim();
+    if (!accountId) {
         console.error("Missing env variable: ACCOUNT_ID");
         return [];
     }
@@ -51,7 +52,7 @@ async function getItemsByTag(tagName: string, bidderToken?: string): Promise<Tag
         const searchData = await client.query({
             search: {
                 __args: {
-                    accountId: process.env.ACCOUNT_ID,
+                    accountId,
                     type: "ITEM",
                     query: "*",
                     filterBy,
