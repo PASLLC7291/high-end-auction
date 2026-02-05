@@ -1,6 +1,12 @@
+import { config } from "dotenv";
+import { join, resolve } from "path";
+
+// Load environment variables from .env.local for local/dev usage.
+// Deployment platforms (Vercel/Netlify) provide env vars directly.
+config({ path: resolve(process.cwd(), ".env.local"), quiet: true });
+
 import { createClient } from "@libsql/client";
 import { readFileSync } from "fs";
-import { join } from "path";
 
 async function initDatabase() {
     const url = process.env.TURSO_DATABASE_URL?.trim() || "file:./db/local.db";

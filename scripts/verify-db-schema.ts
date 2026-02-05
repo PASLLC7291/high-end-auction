@@ -1,3 +1,10 @@
+import { config } from "dotenv";
+import { resolve } from "path";
+
+// Load environment variables from .env.local for local/dev usage.
+// Deployment platforms (Vercel/Netlify) provide env vars directly.
+config({ path: resolve(process.cwd(), ".env.local"), quiet: true });
+
 import { createClient } from "@libsql/client";
 
 type TableSpec = {
