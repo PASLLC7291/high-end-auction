@@ -50,7 +50,6 @@ STRIPE_WEBHOOK_SECRET="whsec_..."
 
 - **Primary app DB**: Turso (libSQL). In local development this defaults to a file-based SQLite DB at `db/local.db`.
 - **Schema**: `db/schema.sql` (created/verified via `pnpm db:init`).
-- **Optional legacy schema**: `supabase/schema.sql` (Postgres/Supabase) is kept as a reference and is **not** used by the app runtime.
 
 ### DB Commands
 
