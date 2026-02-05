@@ -32,6 +32,15 @@ type BastaWebhook = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const WEBHOOK_TOKEN_HEADER = "x-fastbid-webhook-token";
+
+function timingSafeEqualStrings(a: string, b: string): boolean {
+    const aBuf = Buffer.from(a);
+    const bBuf = Buffer.from(b);
+    if (aBuf.length !== bBuf.length) return false;
+    return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
 function isSignatureValid(params: {
     rawBody: string;
     signatureHeader: string;
@@ -373,26 +382,40 @@ async function processSaleClosed(saleId: string) {
 export async function POST(request: NextRequest) {
     try {
         const signature = request.headers.get("x-basta-signature");
+        const tokenHeader = request.headers.get(WEBHOOK_TOKEN_HEADER);
         const secret = process.env.BASTA_WEBHOOK_SECRET?.trim();
 
         if (!secret) {
             return NextResponse.json({ error: "Webhook not configured" }, { status: 400 });
         }
-        if (!signature) {
-            return NextResponse.json({ error: "Missing signature" }, { status: 400 });
-        }
 
         const rawBody = await request.text();
-        const sigCheck = isSignatureValid({
-            rawBody,
-            signatureHeader: signature,
-            secret,
-        });
-        if (!sigCheck.valid) {
-            return NextResponse.json(
-                { error: sigCheck.reason },
-                { status: 401 }
-            );
+
+        const tokenValid = (() => {
+            const token = tokenHeader?.trim();
+            if (!token) return false;
+            try {
+                return timingSafeEqualStrings(token, secret);
+            } catch {
+                return false;
+            }
+        })();
+
+        const sigCheck =
+            signature?.trim()
+                ? isSignatureValid({
+                    rawBody,
+                    signatureHeader: signature,
+                    secret,
+                })
+                : { valid: false as const, reason: "Missing signature" as const };
+
+        if (!tokenValid && !sigCheck.valid) {
+            // If the shared token header isn't present, fall back to signature verification.
+            // This supports both models:
+            // - Basta-signed payloads (x-basta-signature + whsec_... secret)
+            // - Shared secret header configured on Action Hook subscriptions (WEBHOOK_TOKEN_HEADER)
+            return NextResponse.json({ error: sigCheck.reason }, { status: 401 });
         }
 
         const payload = JSON.parse(rawBody) as BastaWebhook;

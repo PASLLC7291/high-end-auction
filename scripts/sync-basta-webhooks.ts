@@ -12,6 +12,8 @@ type ActionHookSubscription = {
   headers?: Array<{ key: string; value: string } | null> | null;
 };
 
+const WEBHOOK_TOKEN_HEADER = "x-fastbid-webhook-token";
+
 function getArg(name: string): string | null {
   const idx = process.argv.findIndex((a) => a === name);
   if (idx === -1) return null;
@@ -39,6 +41,7 @@ function usage(): never {
 async function main() {
   const url = getArg("--url") || process.env.BASTA_WEBHOOK_URL || null;
   const apply = hasFlag("--apply");
+  const token = process.env.BASTA_WEBHOOK_SECRET?.trim() || null;
 
   if (!url) usage();
 
@@ -60,24 +63,60 @@ async function main() {
     return;
   }
 
-  const changes = subs.filter((s) => s.url !== url);
+  const headerKeyLower = WEBHOOK_TOKEN_HEADER.toLowerCase();
+  const normalizeHeaders = (headers: ActionHookSubscription["headers"]) =>
+    (headers ?? [])
+      .filter(Boolean)
+      .map((h) => ({ key: h!.key, value: h!.value }))
+      .filter((h) => h.key.trim().length > 0);
+
+  const ensureAuthHeader = (headers: Array<{ key: string; value: string }>) => {
+    if (!token) return headers;
+    const filtered = headers.filter((h) => h.key.trim().toLowerCase() !== headerKeyLower);
+    return [...filtered, { key: WEBHOOK_TOKEN_HEADER, value: token }];
+  };
+
+  const needsAuthHeaderUpdate = (headers: Array<{ key: string; value: string }>) => {
+    if (!token) return false;
+    const existing = headers.find((h) => h.key.trim().toLowerCase() === headerKeyLower);
+    return !existing || existing.value !== token;
+  };
+
+  const changes = subs
+    .map((s) => {
+      const currentHeaders = normalizeHeaders(s.headers);
+      const desiredHeaders = ensureAuthHeader(currentHeaders);
+      const urlChanged = s.url !== url;
+      const headersChanged = needsAuthHeaderUpdate(currentHeaders);
+      return { sub: s, urlChanged, headersChanged, desiredHeaders };
+    })
+    .filter((c) => c.urlChanged || c.headersChanged);
 
   console.log(`Target URL: ${url}`);
   console.log(`Found ${subs.length} subscriptions (${changes.length} to update).`);
+  if (token) {
+    console.log(`Auth header: ${WEBHOOK_TOKEN_HEADER} (value from BASTA_WEBHOOK_SECRET)`);
+  } else {
+    console.log(
+      `Auth header: skipped (set BASTA_WEBHOOK_SECRET to also attach ${WEBHOOK_TOKEN_HEADER} to subscriptions)`
+    );
+  }
 
   if (!apply) {
-    for (const s of changes) {
-      console.log(`- ${s.action}: ${s.url} -> ${url}`);
+    for (const c of changes) {
+      const s = c.sub;
+      const parts: string[] = [];
+      if (c.urlChanged) parts.push(`url ${s.url} -> ${url}`);
+      if (c.headersChanged) parts.push(`set ${WEBHOOK_TOKEN_HEADER}`);
+      console.log(`- ${s.action}: ${parts.join(", ")}`);
     }
     console.log("\nDry run only. Re-run with --apply to update.");
     return;
   }
 
-  for (const s of changes) {
-    const headers = (s.headers ?? []).filter(Boolean).map((h) => ({
-      key: h!.key,
-      value: h!.value,
-    }));
+  for (const c of changes) {
+    const s = c.sub;
+    const headers = c.desiredHeaders;
 
     await client.mutation({
       updateActionHookSubscription: {
@@ -104,4 +143,3 @@ main().catch((error) => {
   console.error("Failed to sync Basta webhooks:", error);
   process.exit(1);
 });
-
