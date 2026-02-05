@@ -67,7 +67,8 @@ If your local DB gets out of sync during development, delete `db/local.db` and r
 
 - Deployment checklist: `docs/deployment.md`
 - Deploy-time env verification: `pnpm env:verify`
-- Netlify build command: `pnpm deploy:build` (runs env verification + `pnpm build`)
+- Netlify build command: `pnpm deploy:build` (runs env verification + DB schema verification + `pnpm build`)
+- Vercel: uses `vercel-build` → `pnpm deploy:build` (no build-command override needed)
 
 ## Project Structure
 

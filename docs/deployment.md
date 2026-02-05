@@ -34,6 +34,13 @@ Optional:
 - `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`
 - Cloudinary overrides (`NEXT_PUBLIC_DISABLE_CLOUDINARY`, `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME`)
 - Lead uploads: `LEAD_UPLOAD_STORAGE="db"` is recommended for serverless deployments (default).
+- Basta endpoint overrides (rare): `BASTA_DOMAIN`, `BASTA_CLIENT_API_URL`, `BASTA_MANAGEMENT_API_URL`, `NEXT_PUBLIC_BASTA_WS_CLIENT_API_URL`
+
+## 2a) Vercel notes
+
+- This repo includes a `vercel-build` script, so Vercel will run the same checks as Netlify: `env:verify` + `db:verify` + `next build`.
+- Set Node.js to 20+ in Vercel (matches `package.json` engines).
+- Set `NEXTAUTH_URL` to your production URL (custom domain recommended) in the **Production** environment.
 
 ## 3) Webhooks
 

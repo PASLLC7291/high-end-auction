@@ -50,7 +50,8 @@ function BastaClientProvider({ children }: { children: ReactNode }) {
                     : {}),
             },
             wsConnectionParams: {
-                token: bidderToken,
+                // Basta requires bidder token in the websocket init payload (not as an Authorization header).
+                ...(bidderToken ? { initPayload: { token: bidderToken } } : {}),
             },
         }),
         [bidderToken]
