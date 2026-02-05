@@ -18,10 +18,11 @@ export async function markWebhookProcessed(
     if (exists) return false;
 
     try {
+        const now = new Date().toISOString();
         await db.execute({
             sql: `INSERT INTO webhook_events (id, provider, idempotency_key, payload, created_at)
-                  VALUES (?, ?, ?, ?, datetime('now'))`,
-            args: [generateId(), provider, idempotencyKey, JSON.stringify(payload)],
+                  VALUES (?, ?, ?, ?, ?)`,
+            args: [generateId(), provider, idempotencyKey, JSON.stringify(payload), now],
         });
         return true;
     } catch {

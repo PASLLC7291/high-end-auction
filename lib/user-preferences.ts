@@ -9,12 +9,24 @@ export type UserPreferences = {
     updated_at: string;
 };
 
+function toBooleanFlag(value: unknown): boolean {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "bigint") return value !== BigInt(0);
+    if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (!normalized || normalized === "0" || normalized === "false" || normalized === "no") return false;
+        return true;
+    }
+    return Boolean(value);
+}
+
 function rowToPrefs(row: Record<string, unknown>): UserPreferences {
     return {
         user_id: row.user_id as string,
-        email_notifications: Boolean(row.email_notifications),
-        bid_alerts: Boolean(row.bid_alerts),
-        marketing_emails: Boolean(row.marketing_emails),
+        email_notifications: toBooleanFlag(row.email_notifications),
+        bid_alerts: toBooleanFlag(row.bid_alerts),
+        marketing_emails: toBooleanFlag(row.marketing_emails),
         created_at: row.created_at as string,
         updated_at: row.updated_at as string,
     };

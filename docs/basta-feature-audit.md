@@ -55,7 +55,7 @@ Optional but recommended:
 - Consign valuation form + uploads (`/consign` → `POST /api/marketing/valuation`) — PASS
 
 Notes:
-- Stored locally in `lead_submissions` and `lead_uploads` (SQLite/Turso). Uploads write to `db/uploads/` by default.
+- Stored in `lead_submissions` + `lead_uploads` (SQLite/Turso). Upload binaries are stored in `lead_upload_files` by default (deploy-safe for serverless). Set `LEAD_UPLOAD_STORAGE="fs"` to write to `db/uploads/` instead.
 - Covered by Playwright: `tests/e2e/marketing-forms.spec.ts`.
 
 ### Bidder token lifecycle (Basta)

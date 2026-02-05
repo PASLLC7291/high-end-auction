@@ -75,12 +75,13 @@ async function main() {
     }
 
     const id = generateId();
+    const createdAt = new Date().toISOString();
     await db.execute({
         sql: `
             INSERT INTO balance_promotions (
                 id, code, amount_cents, currency, description,
                 starts_at, ends_at, max_redemptions, active, created_at
-            ) VALUES (?, ?, ?, 'USD', ?, ?, ?, ?, ?, datetime('now'))
+            ) VALUES (?, ?, ?, 'USD', ?, ?, ?, ?, ?, ?)
         `,
         args: [
             id,
@@ -91,6 +92,7 @@ async function main() {
             endsAt ?? null,
             max ?? null,
             inactive ? 0 : 1,
+            createdAt,
         ],
     });
 

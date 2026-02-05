@@ -15,6 +15,7 @@ A modern auction platform built with Next.js 16, Basta auction APIs, Turso datab
 
 ```bash
 pnpm install
+pnpm db:init
 pnpm dev
 ```
 
@@ -27,7 +28,9 @@ Copy `.env.example` to `.env.local` and configure:
 ```bash
 # Basta API (get from docs.basta.app)
 ACCOUNT_ID="your-basta-account-id"
+NEXT_PUBLIC_ACCOUNT_ID="your-basta-account-id"
 API_KEY="your-basta-api-key"
+BASTA_WEBHOOK_SECRET="your-basta-webhook-secret"
 
 # NextAuth
 NEXTAUTH_URL="http://localhost:3000"
@@ -42,6 +45,29 @@ STRIPE_SECRET_KEY="sk_test_..."
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_test_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
 ```
+
+## Databases
+
+- **Primary app DB**: Turso (libSQL). In local development this defaults to a file-based SQLite DB at `db/local.db`.
+- **Schema**: `db/schema.sql` (created/verified via `pnpm db:init`).
+- **Optional legacy schema**: `supabase/schema.sql` (Postgres/Supabase) is kept as a reference and is **not** used by the app runtime.
+
+### DB Commands
+
+```bash
+pnpm db:init     # Create/update tables + indexes, then verify schema
+pnpm db:verify   # Verify schema only
+```
+
+`GET /api/health` can be used to verify DB connectivity in dev/prod.
+
+If your local DB gets out of sync during development, delete `db/local.db` and re-run `pnpm db:init`.
+
+## Deployment
+
+- Deployment checklist: `docs/deployment.md`
+- Deploy-time env verification: `pnpm env:verify`
+- Netlify build command: `pnpm deploy:build` (runs env verification + `pnpm build`)
 
 ## Project Structure
 

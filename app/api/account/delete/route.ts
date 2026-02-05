@@ -12,40 +12,24 @@ export async function POST() {
     const userId = session.user.id;
 
     try {
-        // Clean up dependent rows first
-        await db.execute({
-            sql: "DELETE FROM watchlist_items WHERE user_id = ?",
-            args: [userId],
-        });
-        await db.execute({
-            sql: "DELETE FROM user_preferences WHERE user_id = ?",
-            args: [userId],
-        });
-        await db.execute({
-            sql: "DELETE FROM user_profiles WHERE user_id = ?",
-            args: [userId],
-        });
-        await db.execute({
-            sql: "DELETE FROM payment_profiles WHERE user_id = ?",
-            args: [userId],
-        });
-
-        // Payment orders + items
-        await db.execute({
-            sql: `DELETE FROM payment_order_items
-                  WHERE basta_order_id IN (SELECT basta_order_id FROM payment_orders WHERE user_id = ?)`,
-            args: [userId],
-        });
-        await db.execute({
-            sql: "DELETE FROM payment_orders WHERE user_id = ?",
-            args: [userId],
-        });
-
-        // Finally delete the user
-        await db.execute({
-            sql: "DELETE FROM users WHERE id = ?",
-            args: [userId],
-        });
+        // Execute deletes atomically to avoid partial cleanup on failure.
+        await db.batch(
+            [
+                { sql: "DELETE FROM watchlist_items WHERE user_id = ?", args: [userId] },
+                { sql: "DELETE FROM user_preferences WHERE user_id = ?", args: [userId] },
+                { sql: "DELETE FROM user_profiles WHERE user_id = ?", args: [userId] },
+                { sql: "DELETE FROM payment_profiles WHERE user_id = ?", args: [userId] },
+                {
+                    sql: `DELETE FROM payment_order_items
+                          WHERE basta_order_id IN (SELECT basta_order_id FROM payment_orders WHERE user_id = ?)`,
+                    args: [userId],
+                },
+                { sql: "DELETE FROM payment_orders WHERE user_id = ?", args: [userId] },
+                { sql: "DELETE FROM balance_promotion_redemptions WHERE user_id = ?", args: [userId] },
+                { sql: "DELETE FROM users WHERE id = ?", args: [userId] },
+            ],
+            "write"
+        );
 
         return NextResponse.json({ success: true });
     } catch (error) {
@@ -53,4 +37,3 @@ export async function POST() {
         return NextResponse.json({ error: "Failed to delete account" }, { status: 500 });
     }
 }
-

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createClient } from "@libsql/client";
+import { createTestDbClient } from "./db-client";
 
 test("smoke: auth, session token, watchlist, settings", async ({ page, request }) => {
   page.on("pageerror", (error) => {
@@ -31,16 +31,18 @@ test("smoke: auth, session token, watchlist, settings", async ({ page, request }
   expect(userId).toBeTruthy();
 
   // Seed a "payment method" so bidder token generation is enabled in auth callbacks.
-  const db = createClient({ url: "file:./db/local.db" });
+  const db = createTestDbClient();
+  const now = new Date().toISOString();
   await db.execute({
-    sql: `INSERT INTO payment_profiles (user_id, stripe_customer_id, default_payment_method_id)
-          VALUES (?, ?, ?)
+    sql: `INSERT INTO payment_profiles (user_id, stripe_customer_id, default_payment_method_id, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(user_id) DO UPDATE SET
             stripe_customer_id = excluded.stripe_customer_id,
             default_payment_method_id = excluded.default_payment_method_id,
-            updated_at = datetime('now')`,
-    args: [userId!, `cus_e2e_${userId}`, `pm_e2e_${userId}`],
+            updated_at = excluded.updated_at`,
+    args: [userId!, `cus_e2e_${userId}`, `pm_e2e_${userId}`, now, now],
   });
+  db.close();
 
   // Login
   await page.goto("/login");

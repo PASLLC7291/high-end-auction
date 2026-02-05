@@ -54,19 +54,21 @@ function sleep(ms) {
 }
 
 async function createPromo({ code, amountCents, description }) {
-  const url = process.env.TURSO_DATABASE_URL || "file:./db/local.db";
-  const authToken = process.env.TURSO_AUTH_TOKEN;
+  const url = process.env.TURSO_DATABASE_URL?.trim() || "file:./db/local.db";
+  const authToken = process.env.TURSO_AUTH_TOKEN?.trim() || undefined;
   const db = createClient({ url, authToken });
 
   const id = crypto.randomUUID();
+  const createdAt = new Date().toISOString();
   await db.execute({
     sql: `
       INSERT INTO balance_promotions (
         id, code, amount_cents, currency, description, active, created_at
-      ) VALUES (?, ?, ?, 'USD', ?, 1, datetime('now'))
+      ) VALUES (?, ?, ?, 'USD', ?, 1, ?)
     `,
-    args: [id, code, amountCents, description ?? null],
+    args: [id, code, amountCents, description ?? null, createdAt],
   });
+  db.close();
 
   return { id };
 }
@@ -145,4 +147,3 @@ main().catch((error) => {
   console.error("Headless balance flow failed:", error.message);
   process.exit(1);
 });
-

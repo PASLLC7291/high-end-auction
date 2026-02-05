@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createClient } from "@libsql/client";
+import { createTestDbClient } from "./db-client";
 import { rm } from "fs/promises";
 import path from "path";
 
@@ -13,7 +13,7 @@ test("marketing forms: newsletter, contact, consultation, valuation", async ({ p
     }
   });
 
-  const db = createClient({ url: "file:./db/local.db" });
+  const db = createTestDbClient();
 
   const uniqueSuffix = Date.now();
 
@@ -106,13 +106,20 @@ test("marketing forms: newsletter, contact, consultation, valuation", async ({ p
   expect(uploads.rows.length).toBe(1);
 
   // Best-effort cleanup of uploaded files to keep the repo tidy in repeated runs.
+  let hasFilesystemUploads = false;
   for (const row of uploads.rows) {
     const relativePath = row.path as string | null | undefined;
     if (!relativePath) continue;
+    if (relativePath.startsWith("db:")) continue;
+    hasFilesystemUploads = true;
     await rm(path.join(process.cwd(), relativePath), { force: true }).catch(() => {});
   }
-  await rm(
-    path.join(process.cwd(), "db", "uploads", "valuation-requests", submissionId!),
-    { recursive: true, force: true }
-  ).catch(() => {});
+  if (hasFilesystemUploads) {
+    await rm(
+      path.join(process.cwd(), "db", "uploads", "valuation-requests", submissionId!),
+      { recursive: true, force: true }
+    ).catch(() => {});
+  }
+
+  db.close();
 });

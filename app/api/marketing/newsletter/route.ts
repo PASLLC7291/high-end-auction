@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
         const { email } = parsed.data;
 
         const id = generateId();
+        const createdAt = new Date().toISOString();
         const payload = {
             email,
             userAgent: request.headers.get("user-agent"),
@@ -38,8 +39,8 @@ export async function POST(request: NextRequest) {
 
         try {
             await db.execute({
-                sql: "INSERT INTO lead_submissions (id, type, email, payload) VALUES (?, ?, ?, ?)",
-                args: [id, "newsletter", email.toLowerCase(), JSON.stringify(payload)],
+                sql: "INSERT INTO lead_submissions (id, type, email, payload, created_at) VALUES (?, ?, ?, ?, ?)",
+                args: [id, "newsletter", email.toLowerCase(), JSON.stringify(payload), createdAt],
             });
         } catch (error) {
             if (isUniqueConstraintError(error)) {
@@ -63,4 +64,3 @@ export async function POST(request: NextRequest) {
         );
     }
 }
-

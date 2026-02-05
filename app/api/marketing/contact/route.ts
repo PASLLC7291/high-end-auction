@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
         }
 
         const id = generateId();
+        const createdAt = new Date().toISOString();
         const payload = {
             ...parsed.data,
             userAgent: request.headers.get("user-agent"),
@@ -33,12 +34,13 @@ export async function POST(request: NextRequest) {
         };
 
         await db.execute({
-            sql: "INSERT INTO lead_submissions (id, type, email, payload) VALUES (?, ?, ?, ?)",
+            sql: "INSERT INTO lead_submissions (id, type, email, payload, created_at) VALUES (?, ?, ?, ?, ?)",
             args: [
                 id,
                 "contact",
                 parsed.data.email.toLowerCase(),
                 JSON.stringify(payload),
+                createdAt,
             ],
         });
 
@@ -51,4 +53,3 @@ export async function POST(request: NextRequest) {
         );
     }
 }
-

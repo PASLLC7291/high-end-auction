@@ -149,13 +149,14 @@ export async function POST(request: NextRequest) {
         });
 
         try {
+            const redeemedAt = new Date().toISOString();
             await db.execute({
                 sql: `
                     INSERT INTO balance_promotion_redemptions (
                         id, promotion_id, user_id,
                         stripe_customer_id, stripe_transaction_id,
                         amount_cents, redeemed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 `,
                 args: [
                     generateId(),
@@ -164,6 +165,7 @@ export async function POST(request: NextRequest) {
                     grant.customerId,
                     grant.transactionId,
                     amountCents,
+                    redeemedAt,
                 ],
             });
         } catch (error) {
