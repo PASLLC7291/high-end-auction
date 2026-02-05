@@ -6,11 +6,11 @@ This document tracks bidder-facing features in this repo and how they map to Bas
 
 ## References (Basta docs)
 
-- API Access: `https://docs.basta.app/getting-started/api-access`
+- API Access: `https://docs.basta.app/api-access`
 - Client API (bidder tokens): `https://docs.basta.app/api-overview/client-api`
 - GraphQL subscriptions (websockets): `https://docs.basta.app/api-overview/graphql-subscriptions-(websockets)`
-- Webhooks: `https://docs.basta.app/api-overview/webhooks`
-- Webhook signature auth: `https://docs.basta.app/api-overview/webhooks/authenticating-webhook-payloads`
+- Webhooks: `https://docs.basta.app/webhooks`
+- Webhook signature auth: `https://docs.basta.app/webhooks/authenticating-webhook-payloads`
 - Walkthrough (create token, bid mutation): `https://docs.basta.app/walkthroughs/create-your-first-auction`
 
 ## Environment / Config
