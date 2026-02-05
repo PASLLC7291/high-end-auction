@@ -30,7 +30,7 @@ Copy `.env.example` to `.env.local` and configure:
 ACCOUNT_ID="your-basta-account-id"
 NEXT_PUBLIC_ACCOUNT_ID="your-basta-account-id"
 API_KEY="your-basta-api-key"
-BASTA_WEBHOOK_SECRET="your-basta-webhook-secret"
+BASTA_WEBHOOK_SECRET="your-basta-webhook-secret-or-shared-token"
 
 # NextAuth
 NEXTAUTH_URL="http://localhost:3000"
@@ -45,6 +45,12 @@ STRIPE_SECRET_KEY="sk_test_..."
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_test_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
 ```
+
+### Basta webhook auth note
+
+`BASTA_WEBHOOK_SECRET` supports two modes:
+- **Signature**: set it to the `whsec_...` value (if provided by Basta) and the app verifies `x-basta-signature`.
+- **Shared header token**: set it to a random value and configure action hooks to send `x-fastbid-webhook-token: <BASTA_WEBHOOK_SECRET>` (helper: `pnpm basta:webhooks:sync -- --url https://<your-domain>/api/webhooks/basta --apply`).
 
 ## Databases
 

@@ -19,7 +19,16 @@ TURSO_AUTH_TOKEN="..." \
 pnpm db:init
 ```
 
-## 2) Configure environment variables
+## 2) Create the Vercel project
+
+1. In Vercel: **Add New → Project**, then import the GitHub repo.
+2. Framework preset: **Next.js** (auto-detected).
+3. Root directory:
+   - If the repo root contains `package.json`, leave as `.` (default).
+   - If this is a monorepo, select the folder that contains `package.json`.
+4. Add environment variables (next section), then deploy.
+
+## 3) Configure environment variables
 
 Set these in your deploy platform (Netlify/Vercel/etc):
 
@@ -36,27 +45,29 @@ Optional:
 - Lead uploads: `LEAD_UPLOAD_STORAGE="db"` is recommended for serverless deployments (default).
 - Basta endpoint overrides (rare): `BASTA_DOMAIN`, `BASTA_CLIENT_API_URL`, `BASTA_MANAGEMENT_API_URL`, `NEXT_PUBLIC_BASTA_WS_CLIENT_API_URL`
 
-## 2a) Vercel notes
+### Vercel notes
 
 - This repo includes a `vercel-build` script, so Vercel will run the same checks as Netlify: `env:verify` + `db:verify` + `next build`.
 - Set Node.js to 20+ in Vercel (matches `package.json` engines).
 - Set `NEXTAUTH_URL` to your production URL (custom domain recommended) in the **Production** environment.
 
-## 3) Webhooks
+## 4) Webhooks
 
 ### Basta
 
 - Endpoint: `POST /api/webhooks/basta`
-- Set `BASTA_WEBHOOK_SECRET` in your deploy environment.
-- In Basta Dashboard, point action hooks to `https://<your-domain>/api/webhooks/basta`.
-- Helper (optional): `pnpm basta:webhooks:sync -- --url https://<your-domain>/api/webhooks/basta --apply`
+- In Basta Dashboard, point action hooks to: `https://<your-domain>/api/webhooks/basta`
+- Authentication (two supported modes):
+  1. **Signature verification** (if you have a Basta webhook secret): set `BASTA_WEBHOOK_SECRET="whsec_..."` and the endpoint will validate `x-basta-signature`.
+  2. **Shared header token** (recommended if you don’t have a Basta signing secret): set `BASTA_WEBHOOK_SECRET` to a random value and configure action hooks to send `x-fastbid-webhook-token: <BASTA_WEBHOOK_SECRET>`.
+     - Helper: `pnpm basta:webhooks:sync -- --url https://<your-domain>/api/webhooks/basta --apply` (adds/updates the header on every subscription)
 
 ### Stripe
 
 - Endpoint: `POST /api/webhooks/stripe`
 - Create a Stripe webhook endpoint for your deploy URL and copy the signing secret to `STRIPE_WEBHOOK_SECRET`.
 
-## 4) Smoke checks
+## 5) Smoke checks
 
 - DB connectivity: `GET /api/health`
 - Build: `pnpm build`
