@@ -227,3 +227,21 @@ CREATE INDEX IF NOT EXISTS idx_dropship_lots_basta_item ON dropship_lots(basta_i
 CREATE INDEX IF NOT EXISTS idx_dropship_lots_basta_sale ON dropship_lots(basta_sale_id);
 CREATE INDEX IF NOT EXISTS idx_dropship_lots_cj_order ON dropship_lots(cj_order_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dropship_lots_cj_vid_sale ON dropship_lots(cj_vid, basta_sale_id);
+
+-- Sourcing keywords for scheduled auto-sourcing with keyword rotation
+CREATE TABLE IF NOT EXISTS sourcing_keywords (
+  id TEXT PRIMARY KEY,
+  keyword TEXT NOT NULL,
+  max_cost_usd REAL NOT NULL DEFAULT 50,
+  max_products INTEGER NOT NULL DEFAULT 5,
+  priority INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  last_sourced_at TEXT,
+  total_runs INTEGER NOT NULL DEFAULT 0,
+  total_lots_created INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sourcing_keywords_active ON sourcing_keywords(active);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sourcing_keywords_keyword ON sourcing_keywords(keyword COLLATE NOCASE);

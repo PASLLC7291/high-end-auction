@@ -15,6 +15,7 @@ import {
   Gavel,
   Heart,
   Trophy,
+  Package,
   CreditCard,
   Settings,
   Shield,
@@ -27,6 +28,7 @@ const accountNavItems = [
   { href: "/account/bids", label: "My Bids", icon: Gavel },
   { href: "/account/watchlist", label: "Watchlist", icon: Heart },
   { href: "/account/won", label: "Won Items", icon: Trophy },
+  { href: "/account/orders", label: "Orders", icon: Package },
   { href: "/account/payment", label: "Payment Methods", icon: CreditCard },
   { href: "/account/settings", label: "Settings", icon: Settings },
 ];

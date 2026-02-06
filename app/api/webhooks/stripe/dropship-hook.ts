@@ -19,6 +19,8 @@ import {
   getBastaUserShippingAddress,
   bastaAddressToShipping,
 } from "@/lib/basta-user";
+import { sendEmail } from "@/lib/email";
+import { getUserById } from "@/lib/user";
 
 export async function triggerDropshipFulfillment(
   invoice: Stripe.Invoice
@@ -52,6 +54,25 @@ export async function triggerDropshipFulfillment(
       stripe_invoice_id: invoice.id,
       winning_bid_cents: lot.winning_bid_cents, // already set by Basta webhook
     });
+
+    // Fire-and-forget: send payment_received email to buyer
+    if (lot.winner_user_id) {
+      getUserById(lot.winner_user_id)
+        .then((user) => {
+          if (!user?.email) return;
+          sendEmail({
+            to: user.email,
+            template: "payment_received",
+            data: {
+              productName: lot.cj_product_name,
+              amount: lot.winning_bid_cents,
+            },
+          });
+        })
+        .catch((e) =>
+          console.warn(`[email] Failed to send payment_received for lot ${lot.id}:`, e)
+        );
+    }
 
     // Get shipping address: try Basta user profile first, then Stripe invoice
     let shippingAddress = extractShippingAddress(invoice);

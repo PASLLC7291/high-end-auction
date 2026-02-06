@@ -21,7 +21,14 @@ import {
   processRefunds,
   getSaleStatus,
   getStatusDashboard,
+  checkCjQuota,
+  type QuotaReport,
 } from "../lib/pipeline";
+import {
+  listKeywords,
+  insertKeyword,
+  deleteKeyword,
+} from "../lib/sourcing-keywords";
 
 // ---------------------------------------------------------------------------
 // CLI helpers
@@ -39,6 +46,38 @@ function hasFlag(name: string): boolean {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const CJ_DELAY_MS = 1200;
+
+// ---------------------------------------------------------------------------
+// Quota display helper
+// ---------------------------------------------------------------------------
+
+function printQuotaReport(report: QuotaReport): void {
+  console.log("\n=== CJ API Quota ===");
+
+  if (report.quotas.length === 0) {
+    console.log("  No quota data available.");
+    return;
+  }
+
+  for (const q of report.quotas) {
+    const usedStr = q.used === -1 ? "unknown" : String(q.used);
+    const remainStr = q.remaining === -1 ? "unknown" : String(q.remaining);
+    const pct = q.total > 0 && q.used >= 0 ? ((q.used / q.total) * 100).toFixed(1) : "?";
+    const warning = q.remaining >= 0 && q.remaining < 100 ? " << CRITICALLY LOW" : "";
+    console.log(
+      `  ${q.endpoint.padEnd(40)} ${usedStr}/${q.total} used (${remainStr} remaining, ${pct}%)${warning}`
+    );
+  }
+
+  if (!report.healthy) {
+    console.log("\n  *** WARNING: Some endpoints are critically low on quota! ***");
+    for (const q of report.criticallyLow) {
+      console.log(`  *** ${q.endpoint}: only ${q.remaining} calls remaining ***`);
+    }
+  } else {
+    console.log("\n  Quota status: HEALTHY");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // source — CJ sourcing + Basta sale creation
@@ -65,6 +104,23 @@ async function commandSource() {
   const cj = new CJClient(cjApiKey);
   const bastaClient = getManagementApiClient();
   const accountId = getAccountId();
+
+  // Pre-flight: Check CJ API quota
+  try {
+    const quotaReport = await checkCjQuota();
+    printQuotaReport(quotaReport);
+    if (!quotaReport.healthy) {
+      console.log(
+        "\n  *** CJ API quota is critically low. Sourcing will continue, but be aware ***"
+      );
+      console.log(
+        "  *** that API calls may fail if limits are exceeded. ***\n"
+      );
+    }
+    console.log("");
+  } catch (e) {
+    console.warn("[source] Failed to check CJ quota (non-blocking):", e);
+  }
 
   // Step 1: Search CJ
   console.log(`[1/7] Searching CJ for "${keyword}"...`);
@@ -657,6 +713,115 @@ async function commandStatus() {
       );
     }
   }
+
+  // Financial summary
+  const f = dashboard.financials;
+  const fmt = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+  console.log(`\n=== Financials ===`);
+  console.log(`  Revenue:     ${fmt(f.totalRevenue)} (${f.lotsSold} lots sold)`);
+  console.log(`  Cost:        ${fmt(f.totalCost)}`);
+  console.log(`  Profit:      ${fmt(f.totalProfit)} (${f.profitMargin.toFixed(1)}% margin)`);
+  console.log(`  Refunds:     ${f.refundCount} lots, ${fmt(f.refundAmount)} returned`);
+  console.log(`  Delivered:   ${f.lotsDelivered} lots`);
+
+  // CJ API quota report
+  try {
+    const quotaReport = await checkCjQuota();
+    printQuotaReport(quotaReport);
+  } catch (e) {
+    console.warn("\n[status] Failed to check CJ API quota:", e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// keywords — Manage sourcing keywords for auto-sourcing rotation
+// ---------------------------------------------------------------------------
+
+async function commandKeywords() {
+  const action = process.argv[3]; // list | add | remove
+
+  if (!action || !["list", "add", "remove"].includes(action)) {
+    console.log(`Usage: pnpm pipeline:keywords <action>
+
+Actions:
+  list                             List all sourcing keywords
+  add    --keyword <term>          Add a keyword
+         [--max-cost <usd>]        Max wholesale cost (default: 50)
+         [--max-products <n>]      Max products per run (default: 5)
+         [--priority <n>]          Priority (higher = first, default: 0)
+  remove --id <id>                 Remove a keyword by ID
+`);
+    process.exit(1);
+  }
+
+  if (action === "list") {
+    const keywords = await listKeywords();
+    if (keywords.length === 0) {
+      console.log("No sourcing keywords configured. Add one with: pnpm pipeline:keywords add --keyword \"phone stand\"");
+      return;
+    }
+
+    console.log("=== Sourcing Keywords ===\n");
+    console.log(
+      "  " +
+      "ID".padEnd(38) +
+      "Keyword".padEnd(25) +
+      "Cost".padEnd(8) +
+      "Max".padEnd(5) +
+      "Pri".padEnd(5) +
+      "Active".padEnd(8) +
+      "Runs".padEnd(6) +
+      "Lots".padEnd(6) +
+      "Last Sourced"
+    );
+    console.log("  " + "-".repeat(120));
+
+    for (const kw of keywords) {
+      const lastSourced = kw.last_sourced_at
+        ? new Date(kw.last_sourced_at).toLocaleDateString()
+        : "never";
+      console.log(
+        "  " +
+        kw.id.slice(0, 36).padEnd(38) +
+        kw.keyword.padEnd(25) +
+        `$${kw.max_cost_usd}`.padEnd(8) +
+        String(kw.max_products).padEnd(5) +
+        String(kw.priority).padEnd(5) +
+        (kw.active ? "yes" : "no").padEnd(8) +
+        String(kw.total_runs).padEnd(6) +
+        String(kw.total_lots_created).padEnd(6) +
+        lastSourced
+      );
+    }
+    console.log(`\n  Total: ${keywords.length} keyword(s)`);
+    return;
+  }
+
+  if (action === "add") {
+    const keyword = getArg("--keyword");
+    if (!keyword) {
+      console.error("Missing --keyword argument");
+      process.exit(1);
+    }
+    const maxCostUsd = getArg("--max-cost") ? parseFloat(getArg("--max-cost")!) : undefined;
+    const maxProducts = getArg("--max-products") ? parseInt(getArg("--max-products")!, 10) : undefined;
+    const priority = getArg("--priority") ? parseInt(getArg("--priority")!, 10) : undefined;
+
+    const id = await insertKeyword({ keyword, maxCostUsd, maxProducts, priority });
+    console.log(`Added keyword "${keyword}" (id: ${id})`);
+    return;
+  }
+
+  if (action === "remove") {
+    const id = getArg("--id");
+    if (!id) {
+      console.error("Missing --id argument");
+      process.exit(1);
+    }
+    await deleteKeyword(id);
+    console.log(`Removed keyword ${id}`);
+    return;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -670,6 +835,7 @@ const commands: Record<string, () => Promise<void | string>> = {
   monitor: commandMonitor,
   run: commandRun,
   status: commandStatus,
+  keywords: commandKeywords,
 };
 
 if (!subcommand || !commands[subcommand]) {
@@ -691,6 +857,11 @@ Commands:
 
   status   Show dashboard of all dropship lots
            --sale-id <id>         Show status for a specific sale
+
+  keywords Manage sourcing keywords for auto-sourcing rotation
+           list                   List all keywords
+           add --keyword <term>   Add a keyword (--max-cost, --max-products, --priority)
+           remove --id <id>       Remove a keyword
 `);
   process.exit(subcommand ? 1 : 0);
 }

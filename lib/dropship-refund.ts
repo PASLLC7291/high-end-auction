@@ -24,6 +24,7 @@ import {
   type DropshipLotStatus,
 } from "@/lib/dropship";
 import { updatePaymentOrder, getPaymentOrderByInvoiceId } from "@/lib/db";
+import { sendAlert } from "@/lib/alerts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -236,6 +237,11 @@ export async function refundDropshipLot(lot: DropshipLot): Promise<RefundResult>
         error_message: `Refund failed: ${reason}`,
       });
 
+      await sendAlert(
+        `Stripe refund failed for lot ${lotId}: ${reason}`,
+        "critical"
+      );
+
       return { success: false, reason: `Stripe refund failed: ${reason}`, lotId };
     }
   } else {
@@ -336,6 +342,17 @@ export async function refundAllFailedLots(): Promise<BatchRefundSummary> {
   console.log(
     `[refund] Batch complete: ${succeeded} succeeded, ${failed} failed out of ${failedLots.length}`
   );
+
+  if (failed > 0) {
+    const failedLotIds = results
+      .filter((r) => !r.success)
+      .map((r) => r.lotId)
+      .join(", ");
+    await sendAlert(
+      `Batch refund: ${failed}/${failedLots.length} refunds failed (lots: ${failedLotIds})`,
+      "critical"
+    );
+  }
 
   return {
     total: failedLots.length,

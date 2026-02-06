@@ -15,6 +15,8 @@ import {
   getDropshipLotByCjOrder,
   updateDropshipLot,
 } from "@/lib/dropship";
+import { sendEmail } from "@/lib/email";
+import { getUserById } from "@/lib/user";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,6 +97,36 @@ async function handleOrderUpdate(payload: {
   console.log(
     `[cj-webhook] Lot ${lot.id} updated: CJ status → ${payload.orderStatus}`
   );
+
+  // Fire-and-forget: send lifecycle emails to buyer
+  if (lot.winner_user_id && (payload.orderStatus === "SHIPPED" || payload.orderStatus === "DELIVERED")) {
+    getUserById(lot.winner_user_id)
+      .then((user) => {
+        if (!user?.email) return;
+        if (payload.orderStatus === "SHIPPED") {
+          sendEmail({
+            to: user.email,
+            template: "order_shipped",
+            data: {
+              productName: lot.cj_product_name,
+              trackingNumber: payload.trackNumber ?? lot.tracking_number,
+              trackingCarrier: payload.logisticName ?? lot.tracking_carrier,
+            },
+          });
+        } else if (payload.orderStatus === "DELIVERED") {
+          sendEmail({
+            to: user.email,
+            template: "order_delivered",
+            data: {
+              productName: lot.cj_product_name,
+            },
+          });
+        }
+      })
+      .catch((e) =>
+        console.warn(`[email] Failed to send email for lot ${lot.id}:`, e)
+      );
+  }
 }
 
 async function handleLogisticsUpdate(payload: {
@@ -135,4 +167,34 @@ async function handleLogisticsUpdate(payload: {
   console.log(
     `[cj-webhook] Lot ${lot.id} tracking updated: ${trackNum}`
   );
+
+  // Fire-and-forget: send lifecycle emails to buyer
+  if (lot.winner_user_id && updates.status) {
+    getUserById(lot.winner_user_id)
+      .then((user) => {
+        if (!user?.email) return;
+        if (updates.status === "SHIPPED") {
+          sendEmail({
+            to: user.email,
+            template: "order_shipped",
+            data: {
+              productName: lot.cj_product_name,
+              trackingNumber: trackNum,
+              trackingCarrier: payload.logisticName ?? lot.tracking_carrier,
+            },
+          });
+        } else if (updates.status === "DELIVERED") {
+          sendEmail({
+            to: user.email,
+            template: "order_delivered",
+            data: {
+              productName: lot.cj_product_name,
+            },
+          });
+        }
+      })
+      .catch((e) =>
+        console.warn(`[email] Failed to send email for lot ${lot.id}:`, e)
+      );
+  }
 }

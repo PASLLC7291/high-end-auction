@@ -27,7 +27,8 @@
     "pipeline:source": "tsx scripts/orchestrate.ts source",
     "pipeline:monitor": "tsx scripts/orchestrate.ts monitor",
     "pipeline:run": "tsx scripts/orchestrate.ts run",
-    "pipeline:status": "tsx scripts/orchestrate.ts status"
+    "pipeline:status": "tsx scripts/orchestrate.ts status",
+    "pipeline:keywords": "tsx scripts/orchestrate.ts keywords"
   },
   "dependencies": {
     "@bastaai/basta-js": "1.0.0-alpha.7",

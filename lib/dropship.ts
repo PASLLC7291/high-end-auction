@@ -266,3 +266,61 @@ export async function getAllDropshipLots(): Promise<DropshipLot[]> {
     rowToLot(row as unknown as Record<string, unknown>)
   );
 }
+
+// ---------------------------------------------------------------------------
+// Buyer / Support lookup queries
+// ---------------------------------------------------------------------------
+
+/** Get all lots won by a specific user, newest first. */
+export async function getDropshipLotsByWinner(
+  winnerUserId: string
+): Promise<DropshipLot[]> {
+  const result = await db.execute({
+    sql: "SELECT * FROM dropship_lots WHERE winner_user_id = ? ORDER BY created_at DESC",
+    args: [winnerUserId],
+  });
+
+  return result.rows.map((row) =>
+    rowToLot(row as unknown as Record<string, unknown>)
+  );
+}
+
+/** Get a lot by its Stripe invoice ID (for support lookups). */
+export async function getDropshipLotByStripeInvoice(
+  invoiceId: string
+): Promise<DropshipLot | null> {
+  const result = await db.execute({
+    sql: "SELECT * FROM dropship_lots WHERE stripe_invoice_id = ?",
+    args: [invoiceId],
+  });
+
+  if (result.rows.length === 0) return null;
+  return rowToLot(result.rows[0] as unknown as Record<string, unknown>);
+}
+
+/** Get lots with active tracking (shipped but not delivered). */
+export async function getDropshipLotsInTransit(): Promise<DropshipLot[]> {
+  const result = await db.execute(
+    "SELECT * FROM dropship_lots WHERE status IN ('SHIPPED', 'CJ_PAID', 'CJ_ORDERED') ORDER BY updated_at ASC"
+  );
+
+  return result.rows.map((row) =>
+    rowToLot(row as unknown as Record<string, unknown>)
+  );
+}
+
+/** Count lots grouped by status (lightweight dashboard query). */
+export async function getDropshipLotStatusCounts(): Promise<
+  Record<string, number>
+> {
+  const result = await db.execute(
+    "SELECT status, COUNT(*) as count FROM dropship_lots GROUP BY status"
+  );
+
+  const counts: Record<string, number> = {};
+  for (const row of result.rows) {
+    const r = row as unknown as Record<string, unknown>;
+    counts[r.status as string] = Number(r.count);
+  }
+  return counts;
+}

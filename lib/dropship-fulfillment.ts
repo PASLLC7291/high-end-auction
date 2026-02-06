@@ -18,6 +18,7 @@ import {
   updateDropshipLot,
   type DropshipLot,
 } from "@/lib/dropship";
+import { sendAlert } from "@/lib/alerts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,6 +84,10 @@ export async function fulfillDropshipLot(params: {
         error_message: `Variant ${lot.cj_vid} out of stock at fulfillment time`,
       });
 
+      await sendAlert(
+        `Lot ${lot.id}: CJ variant ${lot.cj_vid} out of stock at fulfillment time — needs refund`
+      );
+
       return {
         success: false,
         reason: "CJ product out of stock",
@@ -107,6 +112,10 @@ export async function fulfillDropshipLot(params: {
           status: "CJ_PRICE_CHANGED",
           error_message: `CJ price increased from ${lot.cj_cost_cents} to ${currentCostCents} cents`,
         });
+
+        await sendAlert(
+          `Lot ${lot.id}: CJ price increased from $${(lot.cj_cost_cents / 100).toFixed(2)} to $${(currentCostCents / 100).toFixed(2)} (>20% threshold) — needs refund`
+        );
 
         return {
           success: false,
@@ -223,6 +232,9 @@ export async function fulfillAllPaidLots(): Promise<void> {
     if (!lot.shipping_address) {
       console.warn(
         `[fulfillment] Lot ${lot.id} has no shipping address, skipping`
+      );
+      await sendAlert(
+        `Lot ${lot.id} is PAID but has no shipping address — cannot fulfill`
       );
       continue;
     }

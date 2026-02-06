@@ -8,6 +8,8 @@ import {
     logInvoiceAttempt,
 } from "@/lib/db";
 import { notifyAndUpdateOrder } from "@/lib/winner-notification";
+import { sendEmail } from "@/lib/email";
+import { getUserById } from "@/lib/user";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -579,6 +581,25 @@ export async function processClosedItems(params: {
                         console.warn(`[notification] Failed for item ${line.itemId}:`, e)
                     );
                 }
+
+                // Fire-and-forget: send auction_won email to buyer
+                getUserById(userId)
+                    .then((user) => {
+                        if (!user?.email) return;
+                        for (const line of orderLines) {
+                            sendEmail({
+                                to: user.email,
+                                template: "auction_won",
+                                data: {
+                                    productName: line.description.replace("Winning bid: ", ""),
+                                    amount: line.amount,
+                                },
+                            });
+                        }
+                    })
+                    .catch((e) =>
+                        console.warn(`[email] Failed to send auction_won for user ${userId}:`, e)
+                    );
             } else {
                 console.warn(
                     `[invoice] Skipped invoice for user ${userId} order ${orderId}: ${result.reason}`
