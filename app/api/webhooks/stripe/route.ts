@@ -68,12 +68,14 @@ export async function POST(request: NextRequest) {
 
             // Audit log — fire-and-forget
             await updatePaymentOrder(bastaOrderId, { status: "PAID" });
-
-            // Trigger dropship fulfillment if this invoice is for a CJ lot
-            import("./dropship-hook")
-                .then((m) => m.triggerDropshipFulfillment(invoice))
-                .catch((e) => console.error("[stripe-webhook] Dropship fulfillment trigger failed:", e));
         }
+
+        // Trigger dropship fulfillment if this invoice is for a CJ lot.
+        // This runs regardless of bastaOrderId — the dropship-hook resolves
+        // lots independently using invoice metadata, line items, and DB lookups.
+        import("./dropship-hook")
+            .then((m) => m.triggerDropshipFulfillment(invoice))
+            .catch((e) => console.error("[stripe-webhook] Dropship fulfillment trigger failed:", e));
     }
 
     if (event.type === "invoice.payment_failed") {
