@@ -51,6 +51,20 @@ CREATE TABLE IF NOT EXISTS payment_order_items (
 
 CREATE INDEX IF NOT EXISTS idx_payment_order_items_order ON payment_order_items(basta_order_id);
 
+-- Invoice attempt audit log
+CREATE TABLE IF NOT EXISTS invoice_attempts (
+  id TEXT PRIMARY KEY,
+  basta_order_id TEXT NOT NULL,
+  sale_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  stripe_invoice_id TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_attempts_order ON invoice_attempts(basta_order_id);
+
 -- Webhook events for idempotency
 CREATE TABLE IF NOT EXISTS webhook_events (
   id TEXT PRIMARY KEY,

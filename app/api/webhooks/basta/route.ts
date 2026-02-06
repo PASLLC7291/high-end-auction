@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getAccountId, getManagementApiClient } from "@/lib/basta-client";
-import { stripe } from "@/lib/stripe";
-import { getPaymentProfile } from "@/lib/payment-profile";
+import { processClosedItems, clearAccountFeesCache } from "@/lib/order-service";
+import { markWebhookProcessed } from "@/lib/db";
 import type { managementApiSchema } from "@bastaai/basta-js";
-import {
-    markWebhookProcessed,
-    getPaymentOrderBySaleAndUser,
-    insertPaymentOrder,
-    updatePaymentOrder,
-    getProcessedItemIds,
-    upsertPaymentOrderItem,
-} from "@/lib/db";
 
 type ItemsStatusChangedPayload = {
     saleId: string;
@@ -94,6 +86,10 @@ function isSignatureValid(params: {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Fetch sale items from Basta Management API (paginated)
+// ---------------------------------------------------------------------------
+
 type SaleItemNode = {
     id: string;
     status: string;
@@ -162,227 +158,66 @@ async function fetchSaleItems(saleId: string) {
     return { currency: saleCurrency ?? "USD", items };
 }
 
-async function ensureOrderForUser(params: {
-    saleId: string;
-    userId: string;
-    currency: managementApiSchema.Currency;
-    orderLines: { itemId: string; amount: number; description: string }[];
-}): Promise<{ orderId: string; hasInvoice: boolean }> {
-    const { saleId, userId, currency, orderLines } = params;
-    const accountId = getAccountId();
-    const client = getManagementApiClient();
+// ---------------------------------------------------------------------------
+// Handler: SaleStatusChanged → CLOSED
+// ---------------------------------------------------------------------------
 
-    const existingOrder = await getPaymentOrderBySaleAndUser(saleId, userId);
-
-    if (existingOrder?.stripe_invoice_id) {
-        return {
-            orderId: existingOrder.basta_order_id,
-            hasInvoice: true,
-        };
-    }
-
-    if (!existingOrder) {
-        const orderRes = await client.mutation({
-            createOrder: {
-                __args: {
-                    accountId,
-                    input: {
-                        saleId,
-                        userId,
-                        title: `Order for sale ${saleId}`,
-                        currency: currency,
-                        orderLines: orderLines.map((line) => ({
-                            itemId: line.itemId,
-                            amount: line.amount,
-                            description: line.description,
-                        })),
-                    },
-                },
-                id: true,
-                status: true,
-            },
-        });
-
-        const orderId = orderRes.createOrder?.id;
-        if (!orderId) {
-            throw new Error("Failed to create order");
-        }
-
-        await client.mutation({
-            publishPaymentOrder: {
-                __args: {
-                    accountId,
-                    input: { orderId },
-                },
-                id: true,
-                status: true,
-            },
-        });
-
-        await insertPaymentOrder({
-            basta_order_id: orderId,
-            sale_id: saleId,
-            user_id: userId,
-            status: "OPEN",
-        });
-
-        for (const line of orderLines) {
-            await upsertPaymentOrderItem(orderId, line.itemId);
-        }
-
-        return { orderId, hasInvoice: false };
-    }
-
-    const orderId = existingOrder.basta_order_id;
-
-    for (const line of orderLines) {
-        await client.mutation({
-            createOrderLine: {
-                __args: {
-                    accountId,
-                    input: {
-                        orderId,
-                        itemId: line.itemId,
-                        amount: line.amount,
-                        description: line.description,
-                    },
-                },
-                orderLineId: true,
-            },
-        });
-
-        await upsertPaymentOrderItem(orderId, line.itemId);
-    }
-
-    return { orderId, hasInvoice: false };
-}
-
-async function createStripeInvoice(params: {
-    saleId: string;
-    userId: string;
-    bastaOrderId: string;
-    currency: managementApiSchema.Currency;
-    lines: { itemId: string; amount: number; description: string }[];
-}) {
-    const { saleId, userId, bastaOrderId, currency, lines } = params;
-    const profile = await getPaymentProfile(userId);
-    if (!profile?.stripe_customer_id || !profile.default_payment_method_id) {
-        throw new Error(`Missing payment profile for user ${userId}`);
-    }
-
-    const invoice = await stripe.invoices.create({
-        customer: profile.stripe_customer_id,
-        collection_method: "charge_automatically",
-        auto_advance: true,
-        automatic_tax: { enabled: true },
-        default_payment_method: profile.default_payment_method_id,
-        metadata: { saleId, userId, bastaOrderId },
-    });
-
-    for (const line of lines) {
-        await stripe.invoiceItems.create({
-            customer: profile.stripe_customer_id,
-            invoice: invoice.id,
-            amount: line.amount,
-            currency: currency.toLowerCase(),
-            description: line.description,
-            metadata: { itemId: line.itemId, bastaOrderId },
-        });
-    }
-
-    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-
-    await updatePaymentOrder(bastaOrderId, {
-        stripe_invoice_id: finalized.id,
-        stripe_invoice_url: finalized.hosted_invoice_url,
-        status: "INVOICE_ISSUED",
-    });
-
-    const hostedUrl = finalized.hosted_invoice_url || finalized.invoice_pdf;
-    if (!hostedUrl) {
-        throw new Error("Stripe invoice missing hosted URL");
-    }
-
-    const client = getManagementApiClient();
-    const accountId = getAccountId();
-    const dueDate = new Date(
-        ((finalized.due_date ?? finalized.created) as number) * 1000
-    ).toISOString();
-
-    await client.mutation({
-        createInvoice: {
-            __args: {
-                accountId,
-                input: {
-                    orderId: bastaOrderId,
-                    externalID: finalized.id,
-                    url: hostedUrl,
-                    dueDate,
-                },
-            },
-            invoiceId: true,
-            url: true,
-        },
-    });
-}
-
-async function processSaleClosed(saleId: string) {
+async function handleSaleClosed(saleId: string) {
     const { items, currency } = await fetchSaleItems(saleId);
-    const processedSet = await getProcessedItemIds();
 
-    const winningItems = items.filter(
-        (item) =>
-            item.status === "ITEM_CLOSED" &&
-            item.leaderId &&
-            item.currentBid &&
-            !processedSet.has(item.id)
-    );
-
-    if (!winningItems.length) return;
-
-    const grouped = new Map<
-        string,
-        { lines: { itemId: string; amount: number; description: string }[] }
-    >();
-
-    for (const item of winningItems) {
-        const userId = item.leaderId as string;
-        const line = {
+    const closedItems = items
+        .filter(
+            (item) =>
+                item.status === "ITEM_CLOSED" &&
+                item.leaderId &&
+                item.currentBid
+        )
+        .map((item) => ({
             itemId: item.id,
-            amount: item.currentBid as number,
-            description: item.title ? `Winning bid: ${item.title}` : "Winning bid",
-        };
-        if (!grouped.has(userId)) {
-            grouped.set(userId, { lines: [line] });
-        } else {
-            grouped.get(userId)!.lines.push(line);
-        }
-    }
+            leaderId: item.leaderId as string,
+            currentBid: item.currentBid as number,
+            title: item.title || "",
+        }));
 
-    for (const [userId, group] of grouped.entries()) {
-        try {
-            const { orderId, hasInvoice } = await ensureOrderForUser({
-                saleId,
-                userId,
-                currency,
-                orderLines: group.lines,
-            });
+    // Clear fee cache so each webhook batch gets fresh data
+    clearAccountFeesCache();
 
-            if (!hasInvoice) {
-                await createStripeInvoice({
-                    saleId,
-                    userId,
-                    bastaOrderId: orderId,
-                    currency,
-                    lines: group.lines,
-                });
-            }
-        } catch (userError) {
-            // Log and continue so one user's failure doesn't block other winners
-            console.error(`Failed to process invoice for user ${userId} in sale ${saleId}:`, userError);
-        }
-    }
+    await processClosedItems({ saleId, items: closedItems, currency });
 }
+
+// ---------------------------------------------------------------------------
+// Handler: ItemsStatusChanged → individual ITEM_CLOSED
+// ---------------------------------------------------------------------------
+
+async function handleItemsClosed(saleId: string, closedItemIds: string[]) {
+    if (!closedItemIds.length) return;
+
+    const { items, currency } = await fetchSaleItems(saleId);
+
+    const closedSet = new Set(closedItemIds);
+    const closedItems = items
+        .filter(
+            (item) =>
+                closedSet.has(item.id) &&
+                item.status === "ITEM_CLOSED" &&
+                item.leaderId &&
+                item.currentBid
+        )
+        .map((item) => ({
+            itemId: item.id,
+            leaderId: item.leaderId as string,
+            currentBid: item.currentBid as number,
+            title: item.title || "",
+        }));
+
+    clearAccountFeesCache();
+
+    await processClosedItems({ saleId, items: closedItems, currency });
+}
+
+// ---------------------------------------------------------------------------
+// POST handler
+// ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
     try {
@@ -416,10 +251,6 @@ export async function POST(request: NextRequest) {
                 : { valid: false as const, reason: "Missing signature" as const };
 
         if (!tokenValid && !sigCheck.valid) {
-            // If the shared token header isn't present, fall back to signature verification.
-            // This supports both models:
-            // - Basta-signed payloads (x-basta-signature + whsec_... secret)
-            // - Shared secret header configured on Action Hook subscriptions (WEBHOOK_TOKEN_HEADER)
             return NextResponse.json({ error: sigCheck.reason }, { status: 401 });
         }
 
@@ -436,7 +267,18 @@ export async function POST(request: NextRequest) {
         if (payload.actionType === "SaleStatusChanged") {
             const data = payload.data as SaleStatusChangedPayload;
             if (data.saleStatus === "CLOSED") {
-                await processSaleClosed(data.saleId);
+                await handleSaleClosed(data.saleId);
+            }
+        }
+
+        if (payload.actionType === "ItemsStatusChanged") {
+            const data = payload.data as ItemsStatusChangedPayload;
+            const closedItemIds = data.itemStatusChanges
+                .filter((c) => c.itemStatus === "ITEM_CLOSED")
+                .map((c) => c.itemId);
+
+            if (closedItemIds.length) {
+                await handleItemsClosed(data.saleId, closedItemIds);
             }
         }
 

@@ -94,51 +94,63 @@ export async function insertPaymentOrder(order: {
     user_id: string;
     status: string;
 }): Promise<void> {
-    const now = new Date().toISOString();
-    await db.execute({
-        sql: `INSERT INTO payment_orders (id, basta_order_id, sale_id, user_id, status, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        args: [generateId(), order.basta_order_id, order.sale_id, order.user_id, order.status, now, now],
-    });
+    try {
+        const now = new Date().toISOString();
+        await db.execute({
+            sql: `INSERT INTO payment_orders (id, basta_order_id, sale_id, user_id, status, created_at, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            args: [generateId(), order.basta_order_id, order.sale_id, order.user_id, order.status, now, now],
+        });
+    } catch (e) {
+        console.warn("[audit] insertPaymentOrder failed:", e);
+    }
 }
 
 export async function updatePaymentOrder(
     bastaOrderId: string,
     updates: Partial<Pick<PaymentOrder, "stripe_invoice_id" | "stripe_invoice_url" | "status">>
 ): Promise<void> {
-    const setClauses: string[] = ["updated_at = ?"];
-    const args: (string | null)[] = [new Date().toISOString()];
+    try {
+        const setClauses: string[] = ["updated_at = ?"];
+        const args: (string | null)[] = [new Date().toISOString()];
 
-    if (updates.stripe_invoice_id !== undefined) {
-        setClauses.push("stripe_invoice_id = ?");
-        args.push(updates.stripe_invoice_id);
-    }
-    if (updates.stripe_invoice_url !== undefined) {
-        setClauses.push("stripe_invoice_url = ?");
-        args.push(updates.stripe_invoice_url);
-    }
-    if (updates.status !== undefined) {
-        setClauses.push("status = ?");
-        args.push(updates.status);
-    }
+        if (updates.stripe_invoice_id !== undefined) {
+            setClauses.push("stripe_invoice_id = ?");
+            args.push(updates.stripe_invoice_id);
+        }
+        if (updates.stripe_invoice_url !== undefined) {
+            setClauses.push("stripe_invoice_url = ?");
+            args.push(updates.stripe_invoice_url);
+        }
+        if (updates.status !== undefined) {
+            setClauses.push("status = ?");
+            args.push(updates.status);
+        }
 
-    args.push(bastaOrderId);
+        args.push(bastaOrderId);
 
-    await db.execute({
-        sql: `UPDATE payment_orders SET ${setClauses.join(", ")} WHERE basta_order_id = ?`,
-        args,
-    });
+        await db.execute({
+            sql: `UPDATE payment_orders SET ${setClauses.join(", ")} WHERE basta_order_id = ?`,
+            args,
+        });
+    } catch (e) {
+        console.warn("[audit] updatePaymentOrder failed:", e);
+    }
 }
 
 export async function updatePaymentOrderByInvoiceId(
     invoiceId: string,
     updates: Partial<Pick<PaymentOrder, "status">>
 ): Promise<void> {
-    const now = new Date().toISOString();
-    await db.execute({
-        sql: "UPDATE payment_orders SET status = ?, updated_at = ? WHERE stripe_invoice_id = ?",
-        args: [updates.status ?? null, now, invoiceId],
-    });
+    try {
+        const now = new Date().toISOString();
+        await db.execute({
+            sql: "UPDATE payment_orders SET status = ?, updated_at = ? WHERE stripe_invoice_id = ?",
+            args: [updates.status ?? null, now, invoiceId],
+        });
+    } catch (e) {
+        console.warn("[audit] updatePaymentOrderByInvoiceId failed:", e);
+    }
 }
 
 // Payment Order Items
@@ -148,12 +160,46 @@ export async function getProcessedItemIds(): Promise<Set<string>> {
 }
 
 export async function upsertPaymentOrderItem(bastaOrderId: string, itemId: string): Promise<void> {
-    const now = new Date().toISOString();
-    await db.execute({
-        sql: `INSERT INTO payment_order_items (id, basta_order_id, item_id, created_at)
-              VALUES (?, ?, ?, ?)
-              ON CONFLICT(item_id) DO UPDATE SET basta_order_id = excluded.basta_order_id`,
-        args: [generateId(), bastaOrderId, itemId, now],
-    });
+    try {
+        const now = new Date().toISOString();
+        await db.execute({
+            sql: `INSERT INTO payment_order_items (id, basta_order_id, item_id, created_at)
+                  VALUES (?, ?, ?, ?)
+                  ON CONFLICT(item_id) DO UPDATE SET basta_order_id = excluded.basta_order_id`,
+            args: [generateId(), bastaOrderId, itemId, now],
+        });
+    } catch (e) {
+        console.warn("[audit] upsertPaymentOrderItem failed:", e);
+    }
+}
+
+// Invoice Attempt Logging
+export async function logInvoiceAttempt(params: {
+    basta_order_id: string;
+    sale_id: string;
+    user_id: string;
+    status: string;
+    stripe_invoice_id?: string;
+    error?: string;
+}): Promise<void> {
+    try {
+        const now = new Date().toISOString();
+        await db.execute({
+            sql: `INSERT INTO invoice_attempts (id, basta_order_id, sale_id, user_id, status, stripe_invoice_id, error, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            args: [
+                generateId(),
+                params.basta_order_id,
+                params.sale_id,
+                params.user_id,
+                params.status,
+                params.stripe_invoice_id ?? null,
+                params.error ?? null,
+                now,
+            ],
+        });
+    } catch (e) {
+        console.warn("[audit] logInvoiceAttempt failed:", e);
+    }
 }
 

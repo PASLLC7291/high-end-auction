@@ -12,6 +12,13 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function getBastaOrderId(invoice: Stripe.Invoice): string | null {
+    // Primary: read from Stripe invoice metadata (set by tryCreateStripeInvoice)
+    const fromMetadata = invoice.metadata?.bastaOrderId;
+    if (fromMetadata) return fromMetadata;
+    return null;
+}
+
 export async function POST(request: NextRequest) {
     const signature = request.headers.get("stripe-signature");
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
@@ -37,11 +44,15 @@ export async function POST(request: NextRequest) {
 
     if (event.type === "invoice.payment_succeeded" || event.type === "invoice.paid") {
         const invoice = event.data.object as Stripe.Invoice;
-        const invoiceId = invoice.id;
 
-        const order = await getPaymentOrderByInvoiceId(invoiceId);
+        // Try metadata first, fall back to local DB for backwards compat
+        let bastaOrderId = getBastaOrderId(invoice);
+        if (!bastaOrderId) {
+            const order = await getPaymentOrderByInvoiceId(invoice.id);
+            bastaOrderId = order?.basta_order_id ?? null;
+        }
 
-        if (order?.basta_order_id) {
+        if (bastaOrderId) {
             const client = getManagementApiClient();
             const accountId = getAccountId();
 
@@ -49,19 +60,33 @@ export async function POST(request: NextRequest) {
                 createPayment: {
                     __args: {
                         accountId,
-                        input: { orderId: order.basta_order_id },
+                        input: { orderId: bastaOrderId },
                     },
                     paymentId: true,
                 },
             });
 
-            await updatePaymentOrder(order.basta_order_id, { status: "PAID" });
+            // Audit log — fire-and-forget
+            await updatePaymentOrder(bastaOrderId, { status: "PAID" });
         }
     }
 
     if (event.type === "invoice.payment_failed") {
         const invoice = event.data.object as Stripe.Invoice;
-        await updatePaymentOrderByInvoiceId(invoice.id, { status: "PAYMENT_FAILED" });
+
+        // Try metadata first, fall back to local DB
+        let bastaOrderId = getBastaOrderId(invoice);
+        if (!bastaOrderId) {
+            const order = await getPaymentOrderByInvoiceId(invoice.id);
+            bastaOrderId = order?.basta_order_id ?? null;
+        }
+
+        // Audit log — fire-and-forget
+        if (bastaOrderId) {
+            await updatePaymentOrder(bastaOrderId, { status: "PAYMENT_FAILED" });
+        } else {
+            await updatePaymentOrderByInvoiceId(invoice.id, { status: "PAYMENT_FAILED" });
+        }
     }
 
     return NextResponse.json({ status: "ok" });
