@@ -31,8 +31,7 @@ type WonOrderView = {
   saleId: string;
   auctionTitle?: string;
   status?: string | null;
-  stripeInvoiceUrl?: string | null;
-  stripeInvoiceId?: string | null;
+  invoiceUrl?: string | null;
   createdAt: string;
   items: WonItemView[];
 };
@@ -184,13 +183,13 @@ export default function WonItemsPage() {
                       </div>
 
                       <div className="flex gap-2 mt-4 sm:justify-end">
-                        {order.stripeInvoiceUrl && (
+                        {order.invoiceUrl && (
                           <Button
                             asChild
                             size="sm"
                             variant={order.status === "PAID" ? "outline" : "default"}
                           >
-                            <a href={order.stripeInvoiceUrl} target="_blank" rel="noreferrer">
+                            <a href={order.invoiceUrl} target="_blank" rel="noreferrer">
                               {order.status === "PAID" ? "View Invoice" : "Pay / View Invoice"}
                             </a>
                           </Button>

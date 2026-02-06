@@ -2,7 +2,6 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { verifyPassword } from "@/lib/user";
 import { getManagementApiClient, getAccountId } from "@/lib/basta-client";
-import { hasPaymentMethod } from "@/lib/payment-profile";
 
 type BidderTokenData = {
     token: string;
@@ -12,12 +11,6 @@ type BidderTokenData = {
 async function createBidderToken(userId: string): Promise<BidderTokenData | null> {
     if (!userId) {
         console.error("createBidderToken: userId is required");
-        return null;
-    }
-
-    const eligible = await hasPaymentMethod(userId);
-    if (!eligible) {
-        console.warn("Bidder token blocked: no payment method on file");
         return null;
     }
 

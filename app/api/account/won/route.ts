@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { listPaymentOrderItemIds, listPaymentOrdersByUser } from "@/lib/db";
-import { getClientApiClient } from "@/lib/basta-client";
+import { getAccountId, getClientApiClient, getManagementApiClient } from "@/lib/basta-client";
 
 type WonItemView = {
     saleId: string;
@@ -21,11 +20,13 @@ type WonOrderView = {
     saleId: string;
     auctionTitle?: string;
     status?: string | null;
-    stripeInvoiceUrl?: string | null;
-    stripeInvoiceId?: string | null;
+    invoiceUrl?: string | null;
     createdAt: string;
     items: WonItemView[];
 };
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 async function fetchSaleTitle(client: ReturnType<typeof getClientApiClient>, saleId: string): Promise<string | undefined> {
     try {
@@ -41,76 +42,144 @@ async function fetchSaleTitle(client: ReturnType<typeof getClientApiClient>, sal
     }
 }
 
-async function fetchSaleItem(client: ReturnType<typeof getClientApiClient>, saleId: string, itemId: string): Promise<WonItemView> {
-    try {
-        const res = await client.query({
-            saleItem: {
-                __args: { saleId, itemId },
-                id: true,
-                itemNumber: true,
-                title: true,
-                status: true,
-                currency: true,
-                currentBid: true,
-                images: { url: true },
-                dates: { closingEnd: true },
-            },
-        });
-
-        return {
-            saleId,
-            itemId,
-            lotNumber: res.saleItem?.itemNumber ?? undefined,
-            lotTitle: res.saleItem?.title ?? undefined,
-            image: res.saleItem?.images?.[0]?.url ?? undefined,
-            hammerPrice: res.saleItem?.currentBid ?? null,
-            currency: res.saleItem?.currency ?? null,
-            itemStatus: res.saleItem?.status ?? null,
-            closingDate: res.saleItem?.dates?.closingEnd ?? null,
-        };
-    } catch {
-        return { saleId, itemId };
-    }
-}
-
 export async function GET() {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const client = getClientApiClient();
-    const orders = await listPaymentOrdersByUser(session.user.id);
+    const mgmt = getManagementApiClient();
+    const accountId = getAccountId();
+    const clientApi = getClientApiClient();
 
+    const res = await mgmt.query({
+        userOrders: {
+            __args: {
+                accountId,
+                userID: session.user.id,
+                first: 50,
+            },
+            edges: {
+                node: {
+                    id: true,
+                    title: true,
+                    currency: true,
+                    saleId: true,
+                    itemId: true,
+                    status: true,
+                    invoiceId: true,
+                    invoice: {
+                        invoiceId: true,
+                        url: true,
+                        dueDate: true,
+                    },
+                    paymentId: true,
+                    orderLines: {
+                        amount: true,
+                        description: true,
+                        item: {
+                            on_SaleItem: {
+                                __typename: true,
+                                id: true,
+                                title: true,
+                                itemNumber: true,
+                                currentBid: true,
+                                currency: true,
+                                status: true,
+                                images: { url: true },
+                                dates: { closingEnd: true },
+                            },
+                            on_Item: {
+                                __typename: true,
+                                id: true,
+                                title: true,
+                            },
+                        },
+                    },
+                    created: true,
+                },
+            },
+            pageInfo: {
+                totalRecords: true,
+            },
+        },
+    });
+
+    const edges = res.userOrders?.edges ?? [];
+
+    // Cache sale titles
     const saleTitleCache = new Map<string, Promise<string | undefined>>();
     const getTitle = (saleId: string) => {
         if (!saleTitleCache.has(saleId)) {
-            saleTitleCache.set(saleId, fetchSaleTitle(client, saleId));
+            saleTitleCache.set(saleId, fetchSaleTitle(clientApi, saleId));
         }
         return saleTitleCache.get(saleId)!;
     };
 
     const orderViews: WonOrderView[] = [];
 
-    for (const order of orders) {
-        const itemIds = await listPaymentOrderItemIds(order.basta_order_id);
-        const [auctionTitle, items] = await Promise.all([
-            getTitle(order.sale_id),
-            Promise.all(itemIds.map((itemId) => fetchSaleItem(client, order.sale_id, itemId))),
-        ]);
+    for (const edge of edges) {
+        const order = edge?.node;
+        if (!order) continue;
+
+        const auctionTitle = await getTitle(order.saleId);
+
+        // Extract item details from order lines
+        const items: WonItemView[] = [];
+        for (const line of order.orderLines ?? []) {
+            const saleItem = line?.item;
+            if (saleItem && '__typename' in saleItem && saleItem.__typename === 'SaleItem') {
+                const si = saleItem as {
+                    id: string;
+                    title?: string | null;
+                    itemNumber?: number;
+                    currentBid?: number | null;
+                    currency?: string;
+                    status?: string;
+                    images?: Array<{ url?: string | null }>;
+                    dates?: { closingEnd?: string | null };
+                };
+                items.push({
+                    saleId: order.saleId,
+                    itemId: si.id,
+                    lotNumber: si.itemNumber,
+                    lotTitle: si.title ?? undefined,
+                    image: si.images?.[0]?.url ?? undefined,
+                    hammerPrice: si.currentBid ?? line.amount ?? null,
+                    currency: si.currency ?? order.currency ?? null,
+                    itemStatus: si.status ?? null,
+                    closingDate: si.dates?.closingEnd ?? null,
+                });
+            } else {
+                // Fallback: use order-level data
+                items.push({
+                    saleId: order.saleId,
+                    itemId: order.itemId,
+                    hammerPrice: line?.amount ?? null,
+                    currency: order.currency ?? null,
+                });
+            }
+        }
+
+        // If no order lines but we have an itemId, add a basic entry
+        if (items.length === 0 && order.itemId) {
+            items.push({
+                saleId: order.saleId,
+                itemId: order.itemId,
+                currency: order.currency ?? null,
+            });
+        }
 
         orderViews.push({
-            bastaOrderId: order.basta_order_id,
-            saleId: order.sale_id,
+            bastaOrderId: order.id,
+            saleId: order.saleId,
             auctionTitle,
             status: order.status ?? null,
-            stripeInvoiceUrl: order.stripe_invoice_url,
-            stripeInvoiceId: order.stripe_invoice_id,
-            createdAt: order.created_at,
+            invoiceUrl: order.invoice?.url ?? null,
+            createdAt: order.created,
             items,
         });
     }
 
     return NextResponse.json({ orders: orderViews });
 }
-

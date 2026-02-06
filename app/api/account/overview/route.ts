@@ -3,7 +3,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { hasPaymentMethod } from "@/lib/payment-profile";
 import { countWatchlistItems } from "@/lib/watchlist";
-import { countPaymentOrderItemsByUser } from "@/lib/db";
 import { getAccountId, getClientApiClient, getManagementApiClient } from "@/lib/basta-client";
 
 type RecentBid = {
@@ -53,10 +52,25 @@ export async function GET() {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const countWonFromBasta = async (): Promise<number> => {
+        try {
+            const mgmt = getManagementApiClient();
+            const res = await mgmt.query({
+                userOrders: {
+                    __args: { accountId: getAccountId(), userID: session.user.id, first: 1 },
+                    pageInfo: { totalRecords: true },
+                },
+            });
+            return res.userOrders?.pageInfo?.totalRecords ?? 0;
+        } catch {
+            return 0;
+        }
+    };
+
     const [paymentOk, watchlistCount, wonCount] = await Promise.all([
         hasPaymentMethod(session.user.id),
         countWatchlistItems(session.user.id),
-        countPaymentOrderItemsByUser(session.user.id),
+        countWonFromBasta(),
     ]);
 
     // Prefer Basta client API `me` query (doc-recommended) when a bidder token exists.

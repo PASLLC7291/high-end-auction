@@ -20,6 +20,13 @@ type BidItem = {
     lastBidDate?: string;
 };
 
+function isPastItemStatus(status?: string | null): boolean {
+    return Boolean(
+        status &&
+        ["ITEM_CLOSED", "ITEM_SOLD", "ITEM_WITHDRAWN", "ITEM_PASSED", "ITEM_PROCESSING"].includes(status)
+    );
+}
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -241,6 +248,19 @@ export async function GET() {
         // Keep the most recent bid activity for this item
         if (new Date(next.lastBidDate ?? 0).getTime() > new Date(existing.lastBidDate ?? 0).getTime()) {
             byItem.set(key, next);
+        }
+    }
+
+    // Management API returns per-bid status (WINNING/LOSING) that doesn't
+    // resolve to WON/LOST after the item closes. Derive final status from
+    // item status for closed items.
+    for (const item of byItem.values()) {
+        if (isPastItemStatus(item.itemStatus)) {
+            if (item.bidStatus === "WINNING") {
+                item.bidStatus = "WON";
+            } else if (item.bidStatus === "LOSING") {
+                item.bidStatus = "LOST";
+            }
         }
     }
 

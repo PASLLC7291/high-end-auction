@@ -12,6 +12,8 @@ import {
   AlertCircle,
   Clock,
   ExternalLink,
+  Trophy,
+  XCircle,
 } from "lucide-react";
 
 type BidItem = {
@@ -83,10 +85,16 @@ function isOutbid(bidStatus?: string | null): boolean {
 }
 
 function getBidBadge(status?: string | null) {
-  if (status === "WINNING" || status === "WON") {
+  if (status === "WON") {
+    return { tone: "won" as const, label: "Won" };
+  }
+  if (status === "WINNING") {
     return { tone: "winning" as const, label: "Winning" };
   }
-  if (status === "LOSING" || status === "LOST") {
+  if (status === "LOST") {
+    return { tone: "lost" as const, label: "Did not win" };
+  }
+  if (status === "LOSING") {
     return { tone: "outbid" as const, label: "Outbid" };
   }
   if (status === "SUBMITTED") {
@@ -180,81 +188,76 @@ export default function BidsPage() {
                       className="border-border/50 overflow-hidden"
                     >
                       <CardContent className="p-0">
-                        <div className="flex flex-col sm:flex-row">
-                          <div className="sm:w-32 h-32 sm:h-auto bg-muted shrink-0">
+                        <div className="flex flex-row">
+                          <div className="w-28 sm:w-36 shrink-0 bg-muted">
                             <img
                               src={bid.image || "/placeholder.svg"}
                               alt={bid.lotTitle || "Lot image"}
-                              className="h-full w-full object-cover"
+                              className="h-full w-full object-cover aspect-square"
                               onError={(e) => { (e.target as HTMLImageElement).src = "/placeholder.svg"; }}
                             />
                           </div>
 
-                          <div className="flex-1 p-4 flex flex-col sm:flex-row gap-4">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start gap-2 flex-wrap">
-                                <Badge variant="outline" className="shrink-0">
-                                  Lot {bid.lotNumber ?? "—"}
+                          <div className="flex-1 p-3 sm:p-4 min-w-0">
+                            <div className="flex items-start gap-2 flex-wrap">
+                              <Badge variant="outline" className="shrink-0 text-xs">
+                                Lot {bid.lotNumber ?? "—"}
+                              </Badge>
+                              {badge.tone === "winning" ? (
+                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-xs">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  {badge.label}
                                 </Badge>
-                                {badge.tone === "winning" ? (
-                                  <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    {badge.label}
-                                  </Badge>
-                                ) : badge.tone === "outbid" ? (
-                                  <Badge
-                                    variant="destructive"
-                                    className="bg-red-100 text-red-700 hover:bg-red-100"
-                                  >
-                                    <AlertCircle className="h-3 w-3 mr-1" />
-                                    {badge.label}
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline">{badge.label}</Badge>
-                                )}
-                              </div>
-                              <h3 className="font-medium mt-2 line-clamp-1">
-                                {bid.lotTitle || "Untitled lot"}
-                              </h3>
-                              <p className="text-sm text-muted-foreground line-clamp-1">
-                                {bid.auctionTitle || "Auction"}
-                              </p>
+                              ) : badge.tone === "outbid" ? (
+                                <Badge
+                                  variant="destructive"
+                                  className="bg-red-100 text-red-700 hover:bg-red-100 text-xs"
+                                >
+                                  <AlertCircle className="h-3 w-3 mr-1" />
+                                  {badge.label}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">{badge.label}</Badge>
+                              )}
+                            </div>
+                            <h3 className="font-medium mt-2 line-clamp-2 text-sm sm:text-base">
+                              {bid.lotTitle || "Untitled lot"}
+                            </h3>
+                            <p className="text-xs sm:text-sm text-muted-foreground line-clamp-1">
+                              {bid.auctionTitle || "Auction"}
+                            </p>
 
-                              <div className="flex items-center gap-4 mt-3 text-sm">
-                                <div>
-                                  <span className="text-muted-foreground">Current: </span>
-                                  <span className="font-medium">
-                                    {formatCurrency(bid.currentBid, currency)}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Your max: </span>
-                                  <span className="font-medium">
-                                    {formatCurrency(bid.yourMaxBid ?? bid.yourBid ?? null, currency)}
-                                  </span>
-                                </div>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs sm:text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Current: </span>
+                                <span className="font-medium">
+                                  {formatCurrency(bid.currentBid, currency)}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Your max: </span>
+                                <span className="font-medium">
+                                  {formatCurrency(bid.yourMaxBid ?? bid.yourBid ?? null, currency)}
+                                </span>
                               </div>
                             </div>
 
-                            <div className="sm:text-right shrink-0">
-                              <div className="flex items-center gap-1 text-sm text-muted-foreground sm:justify-end">
-                                <Clock className="h-4 w-4" />
+                            <div className="flex items-center justify-between mt-3 gap-2">
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Clock className="h-3.5 w-3.5" />
                                 <span>
                                   {bid.closingDate ? getTimeRemaining(bid.closingDate) : "—"}
                                 </span>
                               </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {bid.closingDate ? `Closes ${formatDate(bid.closingDate)}` : ""}
-                              </p>
-                              <div className="flex gap-2 mt-3 sm:justify-end">
+                              <div className="flex gap-2 shrink-0">
                                 {outbid && (
                                   <Link href={`/auction/${bid.saleId}/lot/${bid.itemId}`}>
-                                    <Button size="sm">Increase Bid</Button>
+                                    <Button size="sm" className="text-xs h-8">Increase Bid</Button>
                                   </Link>
                                 )}
                                 <Link href={`/auction/${bid.saleId}/lot/${bid.itemId}`}>
-                                  <Button variant="outline" size="sm">
-                                    View Lot
+                                  <Button variant="outline" size="sm" className="text-xs h-8">
+                                    View
                                     <ExternalLink className="h-3 w-3 ml-1" />
                                   </Button>
                                 </Link>
@@ -283,56 +286,74 @@ export default function BidsPage() {
               </Card>
             ) : (
               <div className="space-y-4">
-                {pastBids.map((bid) => (
-                  <Card
-                    key={`${bid.saleId}:${bid.itemId}`}
-                    className="border-border/50 overflow-hidden"
-                  >
-                    <CardContent className="p-0">
-                      <div className="flex flex-col sm:flex-row">
-                        <div className="sm:w-32 h-32 sm:h-auto bg-muted shrink-0">
-                          <img
-                            src={bid.image || "/placeholder.svg"}
-                            alt={bid.lotTitle || "Lot image"}
-                            className="h-full w-full object-cover opacity-75"
-                          />
-                        </div>
-                        <div className="flex-1 p-4">
-                          <div className="flex items-start gap-2">
-                            <Badge variant="outline">Lot {bid.lotNumber ?? "—"}</Badge>
-                            <Badge variant="secondary">Ended</Badge>
+                {pastBids.map((bid) => {
+                  const badge = getBidBadge(bid.bidStatus);
+                  const won = badge.tone === "won";
+                  return (
+                    <Card
+                      key={`${bid.saleId}:${bid.itemId}`}
+                      className={`overflow-hidden ${won ? "border-green-200 bg-green-50/30 dark:border-green-900 dark:bg-green-950/20" : "border-border/50"}`}
+                    >
+                      <CardContent className="p-0">
+                        <div className="flex flex-row">
+                          <div className="w-28 sm:w-36 shrink-0 bg-muted">
+                            <img
+                              src={bid.image || "/placeholder.svg"}
+                              alt={bid.lotTitle || "Lot image"}
+                              className={`h-full w-full object-cover aspect-square ${won ? "" : "opacity-75"}`}
+                            />
                           </div>
-                          <h3 className="font-medium mt-2">{bid.lotTitle || "Untitled lot"}</h3>
-                          <p className="text-sm text-muted-foreground">
-                            {bid.auctionTitle || "Auction"}
-                          </p>
-                          <div className="flex items-center gap-4 mt-3 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">Final: </span>
-                              <span className="font-medium">
-                                {formatCurrency(bid.currentBid ?? null, bid.currency || "USD")}
-                              </span>
+                          <div className="flex-1 p-3 sm:p-4 min-w-0">
+                            <div className="flex items-start gap-2 flex-wrap">
+                              <Badge variant="outline" className="text-xs">Lot {bid.lotNumber ?? "—"}</Badge>
+                              {won ? (
+                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-xs">
+                                  <Trophy className="h-3 w-3 mr-1" />
+                                  Won
+                                </Badge>
+                              ) : badge.tone === "lost" ? (
+                                <Badge variant="secondary" className="text-xs">
+                                  <XCircle className="h-3 w-3 mr-1" />
+                                  Did not win
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">Ended</Badge>
+                              )}
                             </div>
-                            <div>
-                              <span className="text-muted-foreground">Your max: </span>
-                              <span className="font-medium">
-                                {formatCurrency(bid.yourMaxBid ?? bid.yourBid ?? null, bid.currency || "USD")}
-                              </span>
+                            <h3 className="font-medium mt-2 line-clamp-2 text-sm sm:text-base">
+                              {bid.lotTitle || "Untitled lot"}
+                            </h3>
+                            <p className="text-xs sm:text-sm text-muted-foreground line-clamp-1">
+                              {bid.auctionTitle || "Auction"}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs sm:text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Final: </span>
+                                <span className="font-medium">
+                                  {formatCurrency(bid.currentBid ?? null, bid.currency || "USD")}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Your max: </span>
+                                <span className="font-medium">
+                                  {formatCurrency(bid.yourMaxBid ?? bid.yourBid ?? null, bid.currency || "USD")}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="mt-3">
+                              <Link href={`/auction/${bid.saleId}/lot/${bid.itemId}`}>
+                                <Button variant="outline" size="sm" className="text-xs h-8">
+                                  View Lot
+                                  <ExternalLink className="h-3 w-3 ml-1" />
+                                </Button>
+                              </Link>
                             </div>
                           </div>
-                          <div className="mt-4">
-                            <Link href={`/auction/${bid.saleId}/lot/${bid.itemId}`}>
-                              <Button variant="outline" size="sm">
-                                View Lot
-                                <ExternalLink className="h-3 w-3 ml-1" />
-                              </Button>
-                            </Link>
-                          </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </TabsContent>

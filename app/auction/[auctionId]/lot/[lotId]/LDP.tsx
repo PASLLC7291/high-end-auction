@@ -46,6 +46,7 @@ import {
   Award,
   Info,
   ChevronDown,
+  Trophy,
 } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -265,11 +266,20 @@ export default function LotDetailPage({
   const registrationStatus = saleData?.userSaleRegistrations?.[0]?.status ?? null;
   const isRegistered = registrationStatus === "ACCEPTED";
   const isRegistrationPending = registrationStatus === "PENDING";
+
   const [isExpired, setIsExpired] = useState(() => {
     // Initial check without causing re-renders
     if (!lotData.closingDate) return false;
     return new Date(lotData.closingDate).getTime() <= Date.now();
   });
+
+  // Check if user won or lost this lot
+  const userBidStatus = lotData.userBids?.length
+    ? [...lotData.userBids].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]?.bidStatus
+    : null;
+  const isClosed = lotData.status === "ITEM_CLOSED" || isExpired;
+  const userWon = isClosed && userBidStatus === "WON";
+  const userLost = isClosed && userBidStatus === "LOST";
 
   useEffect(() => {
     const loadPaymentStatus = async () => {
@@ -567,6 +577,38 @@ export default function LotDetailPage({
           <span className="text-foreground font-medium">Lot {lotData.lotNumber}</span>
         </nav>
       </div>
+
+      {/* Winner / Lost Banner */}
+      {session?.user && userWon && (
+        <div className="container mx-auto px-4 mt-4">
+          <div className="rounded-xl bg-green-50 border border-green-200 dark:bg-green-950/30 dark:border-green-900 p-4 flex items-center gap-3">
+            <Trophy className="h-6 w-6 text-green-600 shrink-0" />
+            <div>
+              <p className="font-semibold text-green-800 dark:text-green-200">
+                Congratulations! You won this lot
+              </p>
+              <p className="text-sm text-green-700 dark:text-green-300">
+                Final price: {formatCurrency(lotData.currentBid ?? 0)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {session?.user && userLost && (
+        <div className="container mx-auto px-4 mt-4">
+          <div className="rounded-xl bg-muted/50 border border-border p-4 flex items-center gap-3">
+            <Info className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div>
+              <p className="font-medium text-muted-foreground">
+                This lot has closed. You were outbid.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Final price: {formatCurrency(lotData.currentBid ?? 0)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="container mx-auto px-4">
         <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)]">
