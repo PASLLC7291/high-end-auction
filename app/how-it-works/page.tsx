@@ -156,7 +156,7 @@ const biddingTypes = [
 const feesExplained = [
   {
     title: "Buyer's Premium",
-    percentage: "20%",
+    percentage: "25%",
     description: "Added to the hammer price on all winning bids. This covers auction operations, insurance, and services.",
   },
   {

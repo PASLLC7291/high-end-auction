@@ -6,11 +6,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
-    firstName: z.string().min(1),
-    lastName: z.string().min(1),
-    email: z.string().email(),
-    serviceInterest: z.string().min(1),
-    message: z.string().optional().nullable(),
+    firstName: z.string().min(1).max(100),
+    lastName: z.string().min(1).max(100),
+    email: z.string().email().max(320),
+    serviceInterest: z.string().min(1).max(100),
+    message: z.string().max(5000).optional().nullable(),
 });
 
 export async function POST(request: NextRequest) {

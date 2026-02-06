@@ -360,21 +360,26 @@ async function processSaleClosed(saleId: string) {
     }
 
     for (const [userId, group] of grouped.entries()) {
-        const { orderId, hasInvoice } = await ensureOrderForUser({
-            saleId,
-            userId,
-            currency,
-            orderLines: group.lines,
-        });
-
-        if (!hasInvoice) {
-            await createStripeInvoice({
+        try {
+            const { orderId, hasInvoice } = await ensureOrderForUser({
                 saleId,
                 userId,
-                bastaOrderId: orderId,
                 currency,
-                lines: group.lines,
+                orderLines: group.lines,
             });
+
+            if (!hasInvoice) {
+                await createStripeInvoice({
+                    saleId,
+                    userId,
+                    bastaOrderId: orderId,
+                    currency,
+                    lines: group.lines,
+                });
+            }
+        } catch (userError) {
+            // Log and continue so one user's failure doesn't block other winners
+            console.error(`Failed to process invoice for user ${userId} in sale ${saleId}:`, userError);
         }
     }
 }

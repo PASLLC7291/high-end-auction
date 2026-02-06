@@ -44,16 +44,17 @@ export async function POST(request: NextRequest) {
             });
         } catch (error) {
             if (isUniqueConstraintError(error)) {
-                return NextResponse.json({
-                    success: true,
-                    message: "You're already subscribed.",
-                });
+                // Return same response as new subscription to prevent email enumeration
+                return NextResponse.json(
+                    { success: true, message: "Thanks for subscribing!" },
+                    { status: 201 }
+                );
             }
             throw error;
         }
 
         return NextResponse.json(
-            { success: true, message: "Subscribed!" },
+            { success: true, message: "Thanks for subscribing!" },
             { status: 201 }
         );
     } catch (error) {

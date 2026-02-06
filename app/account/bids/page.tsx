@@ -186,6 +186,7 @@ export default function BidsPage() {
                               src={bid.image || "/placeholder.svg"}
                               alt={bid.lotTitle || "Lot image"}
                               className="h-full w-full object-cover"
+                              onError={(e) => { (e.target as HTMLImageElement).src = "/placeholder.svg"; }}
                             />
                           </div>
 

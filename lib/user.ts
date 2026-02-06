@@ -93,9 +93,15 @@ export async function createUser(
     };
 }
 
+const DUMMY_HASH = "$2a$12$000000000000000000000uGbYFfMFiIzgHNHJrYTGEMNG/S4YIzXi";
+
 export async function verifyPassword(email: string, password: string): Promise<User | null> {
     const user = await getUserByEmail(email);
-    if (!user) return null;
+    if (!user) {
+        // Always run bcrypt to prevent timing-based user enumeration
+        await bcrypt.compare(password, DUMMY_HASH);
+        return null;
+    }
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return null;

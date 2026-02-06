@@ -13,12 +13,12 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB
 const DEFAULT_STORAGE = "db";
 
 const schema = z.object({
-    firstName: z.string().min(1),
-    lastName: z.string().min(1),
-    email: z.string().email(),
-    phone: z.string().optional().nullable(),
-    category: z.string().min(1),
-    description: z.string().min(1),
+    firstName: z.string().min(1).max(100),
+    lastName: z.string().min(1).max(100),
+    email: z.string().email().max(320),
+    phone: z.string().max(30).optional().nullable(),
+    category: z.string().min(1).max(100),
+    description: z.string().min(1).max(5000),
 });
 
 function toStringValue(value: FormDataEntryValue | null) {
@@ -105,6 +105,19 @@ export async function POST(request: NextRequest) {
             if (file.type && !file.type.startsWith("image/")) {
                 return NextResponse.json(
                     { error: `File "${file.name}" must be an image.` },
+                    { status: 400 }
+                );
+            }
+
+            // Validate file content via magic bytes (don't trust client MIME type alone)
+            const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+            const isJpeg = header[0] === 0xFF && header[1] === 0xD8;
+            const isPng = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;
+            const isGif = header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46;
+            const isWebp = header[8] === 0x57 && header[9] === 0x45 && header[10] === 0x42 && header[11] === 0x50;
+            if (!isJpeg && !isPng && !isGif && !isWebp) {
+                return NextResponse.json(
+                    { error: `File "${file.name}" is not a supported image format (JPEG, PNG, GIF, WebP).` },
                     { status: 400 }
                 );
             }

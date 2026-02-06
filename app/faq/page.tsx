@@ -102,7 +102,7 @@ const faqCategories = [
     faqs: [
       {
         question: "What is the buyer's premium?",
-        answer: "The buyer's premium is 20% of the hammer price, added to all winning bids. This covers auction services including cataloging, marketing, insurance, and platform operations. The total you pay is the hammer price plus the 20% premium, plus any applicable shipping.",
+        answer: "The buyer's premium is 25% of the hammer price, added to all winning bids. This covers auction services including cataloging, marketing, insurance, and platform operations. The total you pay is the hammer price plus the 25% premium, plus any applicable shipping.",
       },
       {
         question: "What payment methods do you accept?",

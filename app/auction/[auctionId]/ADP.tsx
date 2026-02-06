@@ -654,6 +654,7 @@ export default function AuctionDetailPage({
                   onClearAll={() => {
                     filters.clearAllFacets();
                     filters.clearAllRanges();
+                    filters.setCurrentPage(1);
                   }}
                   renderLabel={(fieldName, value) => {
                     const renderer = labelRenderers[fieldName as keyof typeof labelRenderers];

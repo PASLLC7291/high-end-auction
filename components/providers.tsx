@@ -2,15 +2,18 @@
 
 import { SessionProvider, useSession } from "next-auth/react";
 import type { Session } from "next-auth";
-import { ReactNode, useState, useEffect, useMemo } from "react";
+import { ReactNode, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { BastaProvider } from "@bastaai/basta-js/client";
 import { CLIENT_API_PROXY_URL, WS_CLIENT_API_URL } from "@/lib/basta-client";
+
+// 2-minute buffer before expiration to ensure token is still valid during API calls
+const TOKEN_EXPIRY_BUFFER_MS = 2 * 60 * 1000;
 
 // Decode JWT expiration (exp claim is in seconds)
 function isTokenExpired(token: string): boolean {
     try {
         const payload = JSON.parse(atob(token.split(".")[1]));
-        return payload.exp * 1000 < Date.now();
+        return payload.exp * 1000 - TOKEN_EXPIRY_BUFFER_MS < Date.now();
     } catch {
         return true;
     }
@@ -19,6 +22,25 @@ function isTokenExpired(token: string): boolean {
 function BastaClientProvider({ children }: { children: ReactNode }) {
     const { status } = useSession();
     const [bidderToken, setBidderToken] = useState<string | null>(null);
+    const fetchingRef = useRef(false);
+
+    const fetchToken = useCallback(() => {
+        // Deduplicate concurrent fetch requests
+        if (fetchingRef.current) return;
+        fetchingRef.current = true;
+
+        fetch("/api/protected/token", { method: "POST" })
+            .then((res) => res.json())
+            .then((data) => {
+                if (data.token) {
+                    setBidderToken(data.token);
+                }
+            })
+            .catch((err) => console.error("Failed to fetch bidder token:", err))
+            .finally(() => {
+                fetchingRef.current = false;
+            });
+    }, []);
 
     useEffect(() => {
         if (status !== "authenticated") {
@@ -28,16 +50,9 @@ function BastaClientProvider({ children }: { children: ReactNode }) {
 
         // Fetch token if we don't have one or it's expired
         if (!bidderToken || isTokenExpired(bidderToken)) {
-            fetch("/api/protected/token", { method: "POST" })
-                .then((res) => res.json())
-                .then((data) => {
-                    if (data.token) {
-                        setBidderToken(data.token);
-                    }
-                })
-                .catch((err) => console.error("Failed to fetch bidder token:", err));
+            fetchToken();
         }
-    }, [status, bidderToken]);
+    }, [status, bidderToken, fetchToken]);
 
     // Memoize the clientApi config to prevent unnecessary re-renders and re-subscriptions
     const clientApiConfig = useMemo(

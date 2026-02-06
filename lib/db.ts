@@ -14,17 +14,15 @@ export async function markWebhookProcessed(
     idempotencyKey: string,
     payload: unknown
 ): Promise<boolean> {
-    const exists = await isWebhookProcessed(provider, idempotencyKey);
-    if (exists) return false;
-
     try {
         const now = new Date().toISOString();
-        await db.execute({
-            sql: `INSERT INTO webhook_events (id, provider, idempotency_key, payload, created_at)
+        const result = await db.execute({
+            sql: `INSERT OR IGNORE INTO webhook_events (id, provider, idempotency_key, payload, created_at)
                   VALUES (?, ?, ?, ?, ?)`,
             args: [generateId(), provider, idempotencyKey, JSON.stringify(payload), now],
         });
-        return true;
+        // rowsAffected === 0 means the row already existed (IGNORE fired)
+        return (result.rowsAffected ?? 0) > 0;
     } catch {
         return false;
     }

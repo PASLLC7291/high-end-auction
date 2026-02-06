@@ -1,4 +1,5 @@
 import { getServerSession } from "next-auth";
+import { notFound } from "next/navigation";
 import ADP, { Auction } from "./ADP";
 import { getClientApiClient } from "@/lib/basta-client";
 import { authOptions } from "@/lib/auth";
@@ -188,13 +189,13 @@ export default async function AuctionDetailPage({
     const auctionDetails = await getAuctionDetails(auctionId, bidderToken);
     const facets = await getFacets(auctionId, bidderToken);;
 
-    if (auctionDetails === null) return "Something went wrong";
+    if (auctionDetails === null) notFound();
 
     const accountId = process.env.ACCOUNT_ID?.trim() || "";
 
     return <ADP auctionDetails={auctionDetails} facets={facets} accountId={accountId} />;
   } catch (error) {
     console.error(error);
-    return "Something went wrong";
+    throw error;
   }
 }

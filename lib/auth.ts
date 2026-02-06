@@ -63,8 +63,8 @@ function isTokenExpired(expiration: string | undefined): boolean {
     if (!expiration) return true;
     const expirationTime = new Date(expiration).getTime();
     const now = Date.now();
-    // Consider token expired if it expires in less than 5 minutes
-    const bufferMs = 5 * 60 * 1000;
+    // Consider token expired if it expires in less than 2 minutes (synced with client-side buffer)
+    const bufferMs = 2 * 60 * 1000;
     return expirationTime - now < bufferMs;
 }
 
@@ -133,6 +133,8 @@ export const authOptions: NextAuthOptions = {
                     token.bidderToken = bidderTokenData.token;
                     token.bidderTokenExpiration = bidderTokenData.expiration;
                 }
+                // If refresh failed but we had a non-expired token, keep the existing one
+                // (don't clear it just because refresh failed)
             }
 
             return token;

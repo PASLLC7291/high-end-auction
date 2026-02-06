@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { stripe } from "@/lib/stripe";
-import { upsertPaymentProfile } from "@/lib/payment-profile";
+import { upsertPaymentProfile, getPaymentProfile } from "@/lib/payment-profile";
 
 type BillingAddress = {
     name?: string;
@@ -54,6 +54,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 { error: "Missing customer or payment method" },
                 { status: 400 }
+            );
+        }
+
+        // Verify the setup intent's customer matches the authenticated user's Stripe customer
+        const existingProfile = await getPaymentProfile(session.user.id);
+        if (existingProfile?.stripe_customer_id && existingProfile.stripe_customer_id !== customerId) {
+            return NextResponse.json(
+                { error: "Setup intent does not belong to this account" },
+                { status: 403 }
             );
         }
 

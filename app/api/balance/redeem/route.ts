@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
-    code: z.string().min(1),
+    code: z.string().min(1).max(100),
 });
 
 function parseOptionalDate(value: string | null): Date | null {
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
         });
         if (existing.rows.length > 0) {
             return NextResponse.json(
-                { error: "You’ve already redeemed this code." },
+                { error: "You've already redeemed this code." },
                 { status: 409 }
             );
         }
@@ -132,6 +132,36 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // Insert the redemption record FIRST to claim the slot atomically.
+        // The UNIQUE(promotion_id, user_id) constraint prevents double-spend.
+        const redemptionId = generateId();
+        const redeemedAt = new Date().toISOString();
+        try {
+            await db.execute({
+                sql: `
+                    INSERT INTO balance_promotion_redemptions (
+                        id, promotion_id, user_id,
+                        amount_cents, redeemed_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                `,
+                args: [
+                    redemptionId,
+                    promo.id,
+                    session.user.id,
+                    amountCents,
+                    redeemedAt,
+                ],
+            });
+        } catch (error) {
+            if (isUniqueConstraintError(error)) {
+                return NextResponse.json(
+                    { error: "You've already redeemed this code." },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+
         const description = promo.description || `Promotion ${promo.code}`;
         const grant = await grantUserBalance({
             userId: session.user.id,
@@ -148,31 +178,13 @@ export async function POST(request: NextRequest) {
             },
         });
 
-        try {
-            const redeemedAt = new Date().toISOString();
-            await db.execute({
-                sql: `
-                    INSERT INTO balance_promotion_redemptions (
-                        id, promotion_id, user_id,
-                        stripe_customer_id, stripe_transaction_id,
-                        amount_cents, redeemed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                `,
-                args: [
-                    generateId(),
-                    promo.id,
-                    session.user.id,
-                    grant.customerId,
-                    grant.transactionId,
-                    amountCents,
-                    redeemedAt,
-                ],
-            });
-        } catch (error) {
-            if (!isUniqueConstraintError(error)) {
-                throw error;
-            }
-        }
+        // Update redemption record with Stripe details
+        await db.execute({
+            sql: `UPDATE balance_promotion_redemptions
+                  SET stripe_customer_id = ?, stripe_transaction_id = ?
+                  WHERE id = ?`,
+            args: [grant.customerId, grant.transactionId, redemptionId],
+        });
 
         const availableCents = grant.endingBalanceCents < 0 ? -grant.endingBalanceCents : 0;
 

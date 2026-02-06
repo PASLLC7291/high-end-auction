@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS payment_orders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payment_orders_user ON payment_orders(user_id);
-CREATE INDEX IF NOT EXISTS idx_payment_orders_sale_user ON payment_orders(sale_id, user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_sale_user ON payment_orders(sale_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_payment_orders_stripe_invoice ON payment_orders(stripe_invoice_id);
 
 -- Payment order items

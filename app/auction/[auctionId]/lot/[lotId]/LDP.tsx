@@ -59,6 +59,7 @@ import { useClientApi } from "@bastaai/basta-js/client";
 import { mapItemToLot, mapSaleToSale, type SaleItemData, type Lot, type Sale } from "./lot-types";
 import { CountdownDisplay } from "./countdown";
 import { useToast } from "@/hooks/use-toast";
+import DOMPurify from "dompurify";
 
 // Helper to format relative time
 function formatRelativeTime(dateString: string): string {
@@ -213,7 +214,14 @@ export default function LotDetailPage({
       // Only update if this is the current lot we're viewing
       if (saleActivityData.saleActivity.id === lotId) {
         setLotData(mapItemToLot(saleActivityData.saleActivity));
-        setSelectedBid(saleActivityData.saleActivity.nextAsks[0]?.toString() || "");
+        const newAsks = saleActivityData.saleActivity.nextAsks ?? [];
+        // Only reset selected bid if current selection is no longer valid
+        setSelectedBid((prev) => {
+          if (!prev || !newAsks.includes(Number(prev))) {
+            return newAsks[0]?.toString() || "";
+          }
+          return prev;
+        });
       }
     }
     if (saleActivityData?.saleActivity?.__typename === "Sale") {
@@ -328,14 +336,36 @@ export default function LotDetailPage({
 
       const bidResult = result.bidOnItem;
       if (bidResult?.__typename === "BidPlacedError") {
-        throw new Error(bidResult.error || "Failed to place bid");
+        const code = bidResult.errorCode;
+        switch (code) {
+          case "ITEM_ALREADY_CLOSED":
+          case "ITEM_CLOSING_PERIOD_PASSED":
+          case "NOT_OPEN_FOR_BIDDING":
+            throw new Error("This lot has closed. Bidding is no longer available.");
+          case "BID_LOWER_THAN_CURRENT_BID":
+          case "BID_LOWER_THAN_CURRENT_MAX":
+          case "MAX_BID_LOWER_THAN_CURRENT_MAX":
+          case "ALREADY_HIGHER_MAX_BID":
+            throw new Error("Your bid was too low. Please select a higher amount and try again.");
+          case "OFF_INCREMENT":
+            throw new Error("Your bid amount is not valid. Please select from the available bid amounts.");
+          case "STARTING_BID_HIGHER":
+            throw new Error("Your bid must meet or exceed the starting bid.");
+          case "BID_AMOUNT_UPPER_LIMIT_REACHED":
+            throw new Error("The maximum bid limit has been reached for this lot.");
+          case "USER_REQUIRED_TO_HAVE_ACCEPTED_REGISTRATION_FOR_SALE":
+          case "USER_REGISTRATION_REJECTED_FOR_SALE":
+          case "USER_REGISTRATION_PENDING_FOR_SALE":
+            throw new Error("You are not authorized to bid. Please ensure you are registered for this auction.");
+          default:
+            throw new Error(bidResult.error || "Failed to place bid");
+        }
       }
 
       toast({
         title: "Bid placed",
         description: "Your bid has been submitted.",
       });
-      router.refresh();
     } catch (error) {
       console.error("Error placing bid:", error);
       toast({
@@ -395,7 +425,9 @@ export default function LotDetailPage({
     }
 
     // Check if user already has a bid and is trying to increase their max bid
-    const latestUserBid = lotData.userBids?.[lotData.userBids.length - 1];
+    const latestUserBid = lotData.userBids?.length
+      ? [...lotData.userBids].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+      : undefined;
     const userMaxBid = latestUserBid?.maxAmount;
     const isWinning = latestUserBid?.bidStatus === "WINNING";
     const hasExistingBid = lotData.userBids && lotData.userBids.length > 0;
@@ -474,12 +506,15 @@ export default function LotDetailPage({
         throw new Error(data.error || "Failed to update watchlist");
       }
 
-      setIsWatchlisted(!isWatchlisted);
-      toast({
-        title: !isWatchlisted ? "Added to watchlist" : "Removed from watchlist",
-        description: !isWatchlisted
-          ? "This lot will appear in your watchlist."
-          : "This lot has been removed from your watchlist.",
+      setIsWatchlisted((prev) => {
+        const next = !prev;
+        toast({
+          title: next ? "Added to watchlist" : "Removed from watchlist",
+          description: next
+            ? "This lot will appear in your watchlist."
+            : "This lot has been removed from your watchlist.",
+        });
+        return next;
       });
     } catch (error) {
       toast({
@@ -492,9 +527,10 @@ export default function LotDetailPage({
     }
   };
 
-  const description = lotData.description || "This painting captures the ethereal essence of dance, with faded, ghost-like figures gracefully moving across the canvas. At the center, a luminous figure emerges...";
+  const rawDescription = lotData.description || "This painting captures the ethereal essence of dance, with faded, ghost-like figures gracefully moving across the canvas. At the center, a luminous figure emerges...";
+  const description = DOMPurify.sanitize(rawDescription);
   const truncatedDescription = description.length > 150
-    ? description.slice(0, 150) + '...'
+    ? DOMPurify.sanitize(description.slice(0, 150) + '...')
     : description;
 
   return (
@@ -777,6 +813,7 @@ export default function LotDetailPage({
                   disabled={
                     paymentStatusLoading ||
                     isPlacingBid ||
+                    isExpired ||
                     lotData.status === "ITEM_CLOSED" ||
                     lotData.status === "ITEM_NOT_OPEN"
                   }
@@ -788,7 +825,7 @@ export default function LotDetailPage({
                     ? "Placing Bid..."
                     : lotData.status === "ITEM_NOT_OPEN"
                       ? "Not Yet Open"
-                      : lotData.status === "ITEM_CLOSED"
+                      : lotData.status === "ITEM_CLOSED" || isExpired
                         ? "Bidding Closed"
                         : session?.user && isRegistrationPending
                           ? "Registration Pending"
@@ -1081,7 +1118,11 @@ export default function LotDetailPage({
           <AlertDialogHeader>
             <AlertDialogTitle>Increase max bid</AlertDialogTitle>
             <AlertDialogDescription>
-              You are currently winning with a max bid of {formatCurrency(lotData.userBids?.[lotData.userBids.length - 1]?.maxAmount || 0)}.
+              You are currently winning with a max bid of {formatCurrency(
+                lotData.userBids?.length
+                  ? [...lotData.userBids].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]?.maxAmount || 0
+                  : 0
+              )}.
               Would you like to increase your max bid to {formatCurrency(pendingBidAmount || 0)}?
             </AlertDialogDescription>
           </AlertDialogHeader>
