@@ -143,7 +143,7 @@ export async function sendEmail(params: {
 
   const fromAddress =
     process.env.RESEND_FROM?.trim() ||
-    "Placer Auctions <noreply@fastbid.co>";
+    "Placer Auctions <noreply@mail.fastbid.co>";
 
   const templateFn = TEMPLATES[template];
   if (!templateFn) {
