@@ -23,7 +23,11 @@
     "balance:grant": "tsx scripts/grant-balance.ts",
     "balance:promo:create": "tsx scripts/create-balance-promo.ts",
     "balance:verify": "node scripts/verify-balance-flow.mjs",
-    "payment:verify": "node scripts/verify-payment-flow.mjs"
+    "payment:verify": "node scripts/verify-payment-flow.mjs",
+    "pipeline:source": "tsx scripts/orchestrate.ts source",
+    "pipeline:monitor": "tsx scripts/orchestrate.ts monitor",
+    "pipeline:run": "tsx scripts/orchestrate.ts run",
+    "pipeline:status": "tsx scripts/orchestrate.ts status"
   },
   "dependencies": {
     "@bastaai/basta-js": "1.0.0-alpha.7",

@@ -33,7 +33,7 @@ type RefundResult =
   | { success: true; stripeRefundId: string | null; lotId: string }
   | { success: false; reason: string; lotId: string };
 
-type BatchRefundSummary = {
+export type BatchRefundSummary = {
   total: number;
   succeeded: number;
   failed: number;

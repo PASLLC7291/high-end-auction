@@ -256,3 +256,13 @@ export async function getDropshipLotByCjOrder(
   if (result.rows.length === 0) return null;
   return rowToLot(result.rows[0] as unknown as Record<string, unknown>);
 }
+
+export async function getAllDropshipLots(): Promise<DropshipLot[]> {
+  const result = await db.execute(
+    "SELECT * FROM dropship_lots ORDER BY created_at DESC"
+  );
+
+  return result.rows.map((row) =>
+    rowToLot(row as unknown as Record<string, unknown>)
+  );
+}
