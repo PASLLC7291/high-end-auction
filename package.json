@@ -11,7 +11,7 @@
     "dev": "next dev",
     "predev": "pnpm db:init",
     "env:verify": "tsx scripts/verify-env.ts",
-    "deploy:build": "pnpm env:verify && pnpm db:verify && pnpm build",
+    "deploy:build": "pnpm env:verify && pnpm db:init && pnpm build",
     "vercel-build": "pnpm deploy:build",
     "lint": "eslint .",
     "start": "next start",
