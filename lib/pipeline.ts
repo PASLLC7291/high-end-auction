@@ -282,12 +282,40 @@ export async function pollAndProcessClosedSales(options?: {
     const { items, currency } = await fetchSaleItems(sale.id);
     console.log(`[poll]   ${items.length} total item(s) in sale.`);
 
-    const closedWithWinner = items.filter(
-      (item) =>
-        item.status === "ITEM_CLOSED" && item.leaderId && item.currentBid
+    const allClosedItems = items.filter(
+      (item) => item.status === "ITEM_CLOSED"
     );
 
-    // Handle reserve-not-met items
+    // Items closed with no bids at all → RESERVE_NOT_MET
+    const noBidItems = allClosedItems.filter(
+      (item) => !item.leaderId || !item.currentBid
+    );
+
+    for (const item of noBidItems) {
+      if (processedItemIds.has(item.id)) continue;
+      totalReserveNotMet++;
+      console.log(
+        `[poll]   No bids: item ${item.id} (${item.title ?? "untitled"})`
+      );
+
+      if (!dryRun) {
+        try {
+          const lot = await getDropshipLotByBastaItem(item.id);
+          if (lot && lot.status !== "RESERVE_NOT_MET") {
+            await updateDropshipLot(lot.id, { status: "RESERVE_NOT_MET" });
+            console.log(`[poll]     Updated dropship lot ${lot.id} → RESERVE_NOT_MET`);
+          }
+        } catch (e) {
+          console.warn(`[poll]     Failed to update dropship lot for item ${item.id}:`, e);
+        }
+      }
+    }
+
+    const closedWithWinner = allClosedItems.filter(
+      (item) => item.leaderId && item.currentBid
+    );
+
+    // Handle reserve-not-met items (had bids but didn't meet reserve)
     const reserveNotMetItems = closedWithWinner.filter(
       (item) => item.reserveMet === false
     );
@@ -312,7 +340,7 @@ export async function pollAndProcessClosedSales(options?: {
       }
     }
 
-    // Filter to eligible items
+    // Filter to eligible items (won, reserve met, not yet processed)
     const eligibleItems = closedWithWinner.filter(
       (item) => item.reserveMet !== false && !processedItemIds.has(item.id)
     );
