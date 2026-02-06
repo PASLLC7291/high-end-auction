@@ -225,9 +225,22 @@ export default function LotDetailPage({
       }
     }
     if (saleActivityData?.saleActivity?.__typename === "Sale") {
+      const saleUpdate = saleActivityData.saleActivity;
       // Only update if this is the current sale we're viewing
-      if (saleActivityData.saleActivity.id === auctionId) {
-        setSaleData(mapSaleToSale(saleActivityData.saleActivity));
+      if (saleUpdate.id === auctionId) {
+        setSaleData((prev) => {
+          const incoming = mapSaleToSale(saleUpdate);
+          // Preserve local registration state if the subscription data
+          // returns empty registrations but we already have a registration
+          // (race condition: subscription fires before Basta syncs the new registration)
+          if (
+            prev.userSaleRegistrations?.length &&
+            !incoming.userSaleRegistrations?.length
+          ) {
+            return { ...incoming, userSaleRegistrations: prev.userSaleRegistrations };
+          }
+          return incoming;
+        });
       }
     }
   }, [saleActivityData, lotId, auctionId])

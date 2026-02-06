@@ -181,8 +181,9 @@ export default function AuctionDetailPage({
     }
     if (saleActivityData?.saleActivity?.__typename === "Sale") {
       const updatedSale = saleActivityData.saleActivity;
-      // Update user registrations
-      if (updatedSale.userSaleRegistrations) {
+      // Update user registrations, but preserve local state if subscription
+      // returns empty data while we already have a registration (race condition)
+      if (updatedSale.userSaleRegistrations?.length) {
         setUserRegistrations(updatedSale.userSaleRegistrations);
       }
     }
