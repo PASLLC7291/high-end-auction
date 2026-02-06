@@ -149,6 +149,22 @@ export async function fulfillDropshipLot(params: {
       products: [{ vid: lot.cj_vid, quantity: 1 }],
     });
 
+    // Validate that CJ returned a usable order ID
+    if (!orderResult.orderId || typeof orderResult.orderId !== "string" || orderResult.orderId.trim() === "") {
+      console.error(
+        `[fulfillment] CJ createOrder returned no orderId for lot ${lot.id}:`,
+        JSON.stringify(orderResult)
+      );
+      await updateDropshipLot(lot.id, {
+        error_message: `CJ order creation returned no order ID. Response: ${JSON.stringify(orderResult)}`,
+      });
+      return {
+        success: false,
+        reason: "CJ order creation returned no order ID",
+        status: lot.status,
+      };
+    }
+
     await updateDropshipLot(lot.id, {
       cj_order_id: orderResult.orderId,
       cj_order_number: orderNumber,
@@ -173,17 +189,23 @@ export async function fulfillDropshipLot(params: {
       });
       console.log(`[fulfillment] CJ order paid: ${orderResult.orderId}`);
     } catch (payErr) {
+      const payReason = payErr instanceof Error ? payErr.message : String(payErr);
       console.error(
         `[fulfillment] CJ payment failed for order ${orderResult.orderId}:`,
         payErr
       );
       await updateDropshipLot(lot.id, {
-        error_message: `CJ payment failed: ${payErr}`,
+        error_message: `CJ payment failed: ${payReason}`,
+        // Keep status as CJ_ORDERED so retry logic can pick it up
       });
-      // Order exists but isn't paid — can retry later
+      return {
+        success: false,
+        reason: `CJ payment failed: ${payReason}`,
+        status: "CJ_ORDERED",
+      };
     }
 
-    // ── Confirm the order ──────────────────────────────────────────────
+    // ── Confirm the order (non-blocking) ─────────────────────────────
     try {
       await cj.confirmOrder(orderResult.orderId);
       console.log(`[fulfillment] CJ order confirmed: ${orderResult.orderId}`);
@@ -191,6 +213,7 @@ export async function fulfillDropshipLot(params: {
       console.warn(
         `[fulfillment] CJ confirm failed (non-blocking): ${confirmErr}`
       );
+      // Confirm failure is non-fatal — order is created and paid
     }
 
     // Calculate profit
@@ -210,6 +233,11 @@ export async function fulfillDropshipLot(params: {
     await updateDropshipLot(lot.id, {
       error_message: `CJ order failed: ${reason}`,
     });
+
+    await sendAlert(
+      `Lot ${lot.id} ("${lot.cj_product_name}"): CJ order creation failed — ${reason}`,
+      "critical"
+    );
 
     return { success: false, reason, status: lot.status };
   }

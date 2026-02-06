@@ -13,6 +13,7 @@
  * 3. Cancel the Basta payment order via cancelPaymentOrder mutation
  * 4. Update the dropship lot status to CANCELLED
  * 5. Update the local payment_orders record
+ * 6. Send refund notification email to buyer (non-throwing)
  */
 
 import { stripe } from "@/lib/stripe";
@@ -25,6 +26,8 @@ import {
 } from "@/lib/dropship";
 import { updatePaymentOrder, getPaymentOrderByInvoiceId } from "@/lib/db";
 import { sendAlert } from "@/lib/alerts";
+import { sendEmail } from "@/lib/email";
+import { getUserById } from "@/lib/user";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +49,19 @@ const REFUNDABLE_STATUSES: DropshipLotStatus[] = [
   "CJ_OUT_OF_STOCK",
   "CJ_PRICE_CHANGED",
 ];
+
+/** Map lot status / error to a buyer-friendly refund reason. */
+function refundReasonForBuyer(lot: DropshipLot): string {
+  switch (lot.status) {
+    case "CJ_OUT_OF_STOCK":
+      return "The item is no longer available from our supplier.";
+    case "CJ_PRICE_CHANGED":
+      return "The supplier price changed and we are unable to fulfill this order at the original price.";
+    default:
+      // PAID with error_message — generic fulfillment failure
+      return "We were unable to fulfill your order due to a supplier issue.";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Stripe refund helpers
@@ -190,6 +206,7 @@ async function cancelBastaPaymentOrder(orderId: string): Promise<boolean> {
  * 3. Cancel the Basta payment order
  * 4. Update the dropship lot status to CANCELLED
  * 5. Update the local payment_orders record
+ * 6. Send refund notification email to the buyer
  */
 export async function refundDropshipLot(lot: DropshipLot): Promise<RefundResult> {
   const lotId = lot.id;
@@ -288,6 +305,38 @@ export async function refundDropshipLot(lot: DropshipLot): Promise<RefundResult>
         e
       );
     }
+  }
+
+  // ── Step 6: Send refund notification email to buyer ───────────────────
+  if (lot.winner_user_id) {
+    try {
+      const user = await getUserById(lot.winner_user_id);
+      if (user?.email) {
+        await sendEmail({
+          to: user.email,
+          template: "order_refunded",
+          data: {
+            productName: lot.cj_product_name,
+            amount: lot.winning_bid_cents,
+            reason: refundReasonForBuyer(lot),
+          },
+        });
+      } else {
+        console.warn(
+          `[refund] No email found for winner_user_id ${lot.winner_user_id} on lot ${lotId}, skipping refund email`
+        );
+      }
+    } catch (e) {
+      // Email failures must never break the refund flow
+      console.error(
+        `[refund] Failed to send refund email for lot ${lotId}:`,
+        e
+      );
+    }
+  } else {
+    console.warn(
+      `[refund] Lot ${lotId} has no winner_user_id, skipping refund email`
+    );
   }
 
   console.log(`[refund] Lot ${lotId} refund complete: ${refundNote}`);

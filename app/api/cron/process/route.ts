@@ -93,5 +93,17 @@ export async function GET(request: NextRequest) {
     await sendAlert(`handleStuckLots failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Step 7: Summary alert if any pipeline steps failed during this cron run
+  const failedSteps = Object.entries(results)
+    .filter(([, value]) => value && typeof value === "object" && "error" in (value as Record<string, unknown>))
+    .map(([key]) => key);
+
+  if (failedSteps.length > 0) {
+    await sendAlert(
+      `Cron run completed with ${failedSteps.length} failure(s): ${failedSteps.join(", ")}. Check logs for details.`,
+      "critical"
+    );
+  }
+
   return NextResponse.json({ ok: true, results });
 }

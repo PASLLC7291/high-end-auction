@@ -44,13 +44,14 @@ export async function POST(request: NextRequest) {
         if (
             !shippingAddress?.line1 ||
             !shippingAddress?.city ||
+            !shippingAddress?.state ||
             !shippingAddress?.postalCode ||
             !shippingAddress?.country
         ) {
             return NextResponse.json(
                 {
                     error:
-                        "Shipping address is required. Please provide line1, city, postalCode, and country.",
+                        "Shipping address is required. Please provide line1, city, state/province, postalCode, and country.",
                 },
                 { status: 400 }
             );

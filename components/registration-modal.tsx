@@ -37,7 +37,7 @@ const registrationFormSchema = z.object({
     line1: z.string().min(1, "Address line 1 is required"),
     line2: z.string().optional(),
     city: z.string().min(1, "City is required"),
-    state: z.string().optional(),
+    state: z.string().min(1, "State / province is required"),
     postalCode: z.string().min(1, "Postal code is required"),
     country: z.string().min(1, "Country is required"),
     agreedToTerms: z.literal(true, {
@@ -122,7 +122,7 @@ export function RegistrationModal({
                         line1: values.line1,
                         line2: values.line2 || undefined,
                         city: values.city,
-                        state: values.state || undefined,
+                        state: values.state,
                         postalCode: values.postalCode,
                         country: values.country,
                     },

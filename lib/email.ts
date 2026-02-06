@@ -6,6 +6,7 @@
  * - payment_received: Payment confirmed, preparing order
  * - order_shipped: Tracking info
  * - order_delivered: Delivery confirmation
+ * - order_refunded: Refund issued with reason and amount
  *
  * Uses the Resend API (https://api.resend.com/emails).
  * Env vars:
@@ -23,7 +24,8 @@ export type EmailTemplate =
   | "auction_won"
   | "payment_received"
   | "order_shipped"
-  | "order_delivered";
+  | "order_delivered"
+  | "order_refunded";
 
 type EmailData = Record<string, string | number | null>;
 
@@ -70,6 +72,18 @@ const TEMPLATES: Record<
       "Order Delivered",
       `<p>Your order of <strong>${esc(data.productName)}</strong> has been delivered.</p>
        <p>Thank you for shopping with Placer Auctions!</p>`
+    ),
+  }),
+
+  order_refunded: (data) => ({
+    subject: `Your order has been refunded`,
+    html: buildHtml(
+      "Order Refunded",
+      `<p>We&rsquo;ve issued a full refund for your order of <strong>${esc(data.productName)}</strong>.</p>
+       <p><strong>Refund amount:</strong> ${formatDollars(data.amount)}</p>
+       <p><strong>Reason:</strong> ${esc(data.reason)}</p>
+       <p>The refund has been sent to your original payment method. Depending on your bank, it may take 5&ndash;10 business days to appear on your statement.</p>
+       <p>We apologize for the inconvenience. If you have any questions, please reply to this email.</p>`
     ),
   }),
 };

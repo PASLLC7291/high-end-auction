@@ -394,7 +394,12 @@ export async function tryCreateStripeInvoice(params: {
                 amount: line.amount,
                 currency: currency.toLowerCase(),
                 description: line.description,
-                metadata: { itemId: line.itemId, bastaOrderId: orderId },
+                metadata: {
+                    itemId: line.itemId,
+                    bastaOrderId: orderId,
+                    saleId,
+                    lineType: "hammer_price",
+                },
             });
 
             // Add fee line items
@@ -406,7 +411,12 @@ export async function tryCreateStripeInvoice(params: {
                     amount: fee.amount,
                     currency: currency.toLowerCase(),
                     description: `${fee.description} — ${line.description}`,
-                    metadata: { itemId: line.itemId, bastaOrderId: orderId, feeType: "buyer_premium" },
+                    metadata: {
+                        itemId: line.itemId,
+                        bastaOrderId: orderId,
+                        saleId,
+                        feeType: "buyer_premium",
+                    },
                 });
             }
         }
