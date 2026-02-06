@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { getAccountId, getManagementApiClient } from "@/lib/basta-client";
 import { processClosedItems, clearAccountFeesCache } from "@/lib/order-service";
 import { markWebhookProcessed } from "@/lib/db";
+import { getDropshipLotByBastaItem, updateDropshipLot } from "@/lib/dropship";
 import type { managementApiSchema } from "@bastaai/basta-js";
 
 type ItemsStatusChangedPayload = {
@@ -97,6 +98,7 @@ type SaleItemNode = {
     currentBid?: number | null;
     title?: string | null;
     currency?: managementApiSchema.Currency | null;
+    reserveMet?: boolean | null;
 };
 
 type SaleItemsQueryResponse = {
@@ -132,6 +134,7 @@ async function fetchSaleItems(saleId: string) {
                             currentBid: true,
                             title: true,
                             currency: true,
+                            reserveMet: true,
                         },
                     },
                     pageInfo: {
@@ -165,12 +168,36 @@ async function fetchSaleItems(saleId: string) {
 async function handleSaleClosed(saleId: string) {
     const { items, currency } = await fetchSaleItems(saleId);
 
+    // Skip and mark items where reserve was not met
+    const reserveNotMetItems = items.filter(
+        (item) =>
+            item.status === "ITEM_CLOSED" &&
+            item.leaderId &&
+            item.currentBid &&
+            item.reserveMet === false
+    );
+    for (const item of reserveNotMetItems) {
+        console.log(
+            `[webhook] Skipping item ${item.id} (${item.title}) — reserve not met (bid: ${item.currentBid})`
+        );
+        // Mark corresponding dropship lot as RESERVE_NOT_MET (fire-and-forget)
+        try {
+            const lot = await getDropshipLotByBastaItem(item.id);
+            if (lot) {
+                await updateDropshipLot(lot.id, { status: "RESERVE_NOT_MET" });
+            }
+        } catch (e) {
+            console.warn(`[webhook] Failed to mark dropship lot for item ${item.id}:`, e);
+        }
+    }
+
     const closedItems = items
         .filter(
             (item) =>
                 item.status === "ITEM_CLOSED" &&
                 item.leaderId &&
-                item.currentBid
+                item.currentBid &&
+                item.reserveMet !== false
         )
         .map((item) => ({
             itemId: item.id,
@@ -178,6 +205,22 @@ async function handleSaleClosed(saleId: string) {
             currentBid: item.currentBid as number,
             title: item.title || "",
         }));
+
+    // Store winner_user_id and winning_bid on dropship lots
+    for (const item of closedItems) {
+        try {
+            const lot = await getDropshipLotByBastaItem(item.itemId);
+            if (lot) {
+                await updateDropshipLot(lot.id, {
+                    winner_user_id: item.leaderId,
+                    winning_bid_cents: item.currentBid,
+                    status: "AUCTION_CLOSED",
+                });
+            }
+        } catch (e) {
+            console.warn(`[webhook] Failed to update dropship lot winner for item ${item.itemId}:`, e);
+        }
+    }
 
     // Clear fee cache so each webhook batch gets fresh data
     clearAccountFeesCache();
@@ -195,13 +238,39 @@ async function handleItemsClosed(saleId: string, closedItemIds: string[]) {
     const { items, currency } = await fetchSaleItems(saleId);
 
     const closedSet = new Set(closedItemIds);
+
+    // Skip and mark items where reserve was not met
+    const reserveNotMetItems = items.filter(
+        (item) =>
+            closedSet.has(item.id) &&
+            item.status === "ITEM_CLOSED" &&
+            item.leaderId &&
+            item.currentBid &&
+            item.reserveMet === false
+    );
+    for (const item of reserveNotMetItems) {
+        console.log(
+            `[webhook] Skipping item ${item.id} (${item.title}) — reserve not met (bid: ${item.currentBid})`
+        );
+        // Mark corresponding dropship lot as RESERVE_NOT_MET (fire-and-forget)
+        try {
+            const lot = await getDropshipLotByBastaItem(item.id);
+            if (lot) {
+                await updateDropshipLot(lot.id, { status: "RESERVE_NOT_MET" });
+            }
+        } catch (e) {
+            console.warn(`[webhook] Failed to mark dropship lot for item ${item.id}:`, e);
+        }
+    }
+
     const closedItems = items
         .filter(
             (item) =>
                 closedSet.has(item.id) &&
                 item.status === "ITEM_CLOSED" &&
                 item.leaderId &&
-                item.currentBid
+                item.currentBid &&
+                item.reserveMet !== false
         )
         .map((item) => ({
             itemId: item.id,
@@ -209,6 +278,22 @@ async function handleItemsClosed(saleId: string, closedItemIds: string[]) {
             currentBid: item.currentBid as number,
             title: item.title || "",
         }));
+
+    // Store winner_user_id and winning_bid on dropship lots
+    for (const item of closedItems) {
+        try {
+            const lot = await getDropshipLotByBastaItem(item.itemId);
+            if (lot) {
+                await updateDropshipLot(lot.id, {
+                    winner_user_id: item.leaderId,
+                    winning_bid_cents: item.currentBid,
+                    status: "AUCTION_CLOSED",
+                });
+            }
+        } catch (e) {
+            console.warn(`[webhook] Failed to update dropship lot winner for item ${item.itemId}:`, e);
+        }
+    }
 
     clearAccountFeesCache();
 

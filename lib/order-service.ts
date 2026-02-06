@@ -7,6 +7,7 @@ import {
     upsertPaymentOrderItem,
     logInvoiceAttempt,
 } from "@/lib/db";
+import { notifyAndUpdateOrder } from "@/lib/winner-notification";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -563,6 +564,21 @@ export async function processClosedItems(params: {
                 console.log(
                     `[invoice] Created Stripe invoice ${result.stripeInvoiceId} for user ${userId} order ${orderId}`
                 );
+
+                // Fire-and-forget: notify winners and attach shipping addresses
+                for (const line of orderLines) {
+                    notifyAndUpdateOrder({
+                        saleId,
+                        itemId: line.itemId,
+                        itemTitle: line.description.replace("Winning bid: ", ""),
+                        winningBid: line.amount,
+                        currency,
+                        orderId,
+                        userId,
+                    }).catch((e) =>
+                        console.warn(`[notification] Failed for item ${line.itemId}:`, e)
+                    );
+                }
             } else {
                 console.warn(
                     `[invoice] Skipped invoice for user ${userId} order ${orderId}: ${result.reason}`

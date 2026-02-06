@@ -177,3 +177,53 @@ CREATE TABLE IF NOT EXISTS balance_promotion_redemptions (
 
 CREATE INDEX IF NOT EXISTS idx_balance_redemptions_promotion ON balance_promotion_redemptions(promotion_id);
 CREATE INDEX IF NOT EXISTS idx_balance_redemptions_user ON balance_promotion_redemptions(user_id);
+
+-- Dropship lots (CJ Dropshipping <-> Basta <-> Stripe fulfillment mapping)
+CREATE TABLE IF NOT EXISTS dropship_lots (
+  id TEXT PRIMARY KEY,
+  -- CJ source data
+  cj_pid TEXT NOT NULL,
+  cj_vid TEXT NOT NULL,
+  cj_product_name TEXT NOT NULL,
+  cj_variant_name TEXT,
+  cj_cost_cents INTEGER NOT NULL,
+  cj_shipping_cents INTEGER NOT NULL DEFAULT 0,
+  cj_logistic_name TEXT,
+  cj_from_country TEXT DEFAULT 'CN',
+  cj_images TEXT,
+  -- Basta mapping
+  basta_sale_id TEXT,
+  basta_item_id TEXT,
+  starting_bid_cents INTEGER NOT NULL,
+  reserve_cents INTEGER NOT NULL,
+  -- Auction result
+  winner_user_id TEXT,
+  winning_bid_cents INTEGER,
+  -- Payment
+  basta_order_id TEXT,
+  stripe_invoice_id TEXT,
+  -- CJ fulfillment
+  cj_order_id TEXT,
+  cj_order_number TEXT,
+  cj_order_status TEXT,
+  cj_paid_at TEXT,
+  -- Shipping
+  shipping_name TEXT,
+  shipping_address TEXT,
+  tracking_number TEXT,
+  tracking_carrier TEXT,
+  -- Margins
+  total_cost_cents INTEGER,
+  profit_cents INTEGER,
+  -- Lifecycle
+  status TEXT NOT NULL DEFAULT 'SOURCED',
+  error_message TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_dropship_lots_status ON dropship_lots(status);
+CREATE INDEX IF NOT EXISTS idx_dropship_lots_basta_item ON dropship_lots(basta_item_id);
+CREATE INDEX IF NOT EXISTS idx_dropship_lots_basta_sale ON dropship_lots(basta_sale_id);
+CREATE INDEX IF NOT EXISTS idx_dropship_lots_cj_order ON dropship_lots(cj_order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dropship_lots_cj_vid_sale ON dropship_lots(cj_vid, basta_sale_id);

@@ -1,0 +1,346 @@
+/**
+ * Dropship Refund Service
+ *
+ * Handles refunds when CJ fulfillment fails after payment has been collected.
+ * Failure states that trigger refunds:
+ * - CJ_OUT_OF_STOCK  — CJ product went out of stock after Stripe payment
+ * - CJ_PRICE_CHANGED — CJ price increased beyond the 20% threshold
+ * - CJ order creation failure (lot still in PAID status with an error)
+ *
+ * Refund flow per lot:
+ * 1. Look up the Stripe invoice from the dropship lot
+ * 2. Refund the Stripe charge (or void if unpaid)
+ * 3. Cancel the Basta payment order via cancelPaymentOrder mutation
+ * 4. Update the dropship lot status to CANCELLED
+ * 5. Update the local payment_orders record
+ */
+
+import { stripe } from "@/lib/stripe";
+import { getManagementApiClient, getAccountId } from "@/lib/basta-client";
+import {
+  getDropshipLotsByStatus,
+  updateDropshipLot,
+  type DropshipLot,
+  type DropshipLotStatus,
+} from "@/lib/dropship";
+import { updatePaymentOrder, getPaymentOrderByInvoiceId } from "@/lib/db";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type RefundResult =
+  | { success: true; stripeRefundId: string | null; lotId: string }
+  | { success: false; reason: string; lotId: string };
+
+type BatchRefundSummary = {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: RefundResult[];
+};
+
+/** Statuses that indicate a CJ fulfillment failure requiring refund. */
+const REFUNDABLE_STATUSES: DropshipLotStatus[] = [
+  "CJ_OUT_OF_STOCK",
+  "CJ_PRICE_CHANGED",
+];
+
+// ---------------------------------------------------------------------------
+// Stripe refund helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Refund or void a Stripe invoice.
+ *
+ * - If the invoice is in "draft" or "open" status it hasn't been paid, so we
+ *   void it instead.
+ * - If the invoice is "paid" we create a full refund on the underlying charge
+ *   (or payment intent).
+ * - If the invoice is already voided or uncollectible we skip.
+ *
+ * Returns the Stripe refund id when a refund was created, or null when the
+ * invoice was voided / already cancelled.
+ */
+async function refundStripeInvoice(
+  invoiceId: string
+): Promise<{ refundId: string | null }> {
+  const invoice = await stripe.invoices.retrieve(invoiceId);
+
+  // Already voided or uncollectible — nothing to do
+  if (invoice.status === "void" || invoice.status === "uncollectible") {
+    console.log(
+      `[refund] Stripe invoice ${invoiceId} is already ${invoice.status}, skipping`
+    );
+    return { refundId: null };
+  }
+
+  // Draft or open — void instead of refund (no money moved yet)
+  if (invoice.status === "draft" || invoice.status === "open") {
+    await stripe.invoices.voidInvoice(invoiceId);
+    console.log(`[refund] Voided unpaid Stripe invoice ${invoiceId}`);
+    return { refundId: null };
+  }
+
+  // Paid — refund the charge
+  if (invoice.status === "paid") {
+    // Stripe types vary by version — cast to access expandable fields
+    const inv = invoice as unknown as Record<string, unknown>;
+
+    // Prefer payment_intent; fall back to charge
+    const rawPi = inv.payment_intent;
+    const paymentIntent =
+      typeof rawPi === "string"
+        ? rawPi
+        : (rawPi as { id?: string } | null)?.id ?? null;
+
+    const rawCharge = inv.charge;
+    const charge =
+      typeof rawCharge === "string"
+        ? rawCharge
+        : (rawCharge as { id?: string } | null)?.id ?? null;
+
+    if (paymentIntent) {
+      const refund = await stripe.refunds.create({
+        payment_intent: paymentIntent,
+        reason: "requested_by_customer",
+        metadata: { invoiceId, source: "dropship_refund" },
+      });
+      console.log(
+        `[refund] Refunded payment intent ${paymentIntent} → refund ${refund.id}`
+      );
+      return { refundId: refund.id };
+    }
+
+    if (charge) {
+      const refund = await stripe.refunds.create({
+        charge,
+        reason: "requested_by_customer",
+        metadata: { invoiceId, source: "dropship_refund" },
+      });
+      console.log(`[refund] Refunded charge ${charge} → refund ${refund.id}`);
+      return { refundId: refund.id };
+    }
+
+    throw new Error(
+      `Invoice ${invoiceId} is paid but has no payment_intent or charge`
+    );
+  }
+
+  throw new Error(
+    `Unexpected invoice status "${invoice.status}" for ${invoiceId}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Basta cancel helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Cancel a payment order in Basta using the management API.
+ * Non-throwing — logs a warning on failure so the rest of the refund flow
+ * can continue.
+ */
+async function cancelBastaPaymentOrder(orderId: string): Promise<boolean> {
+  try {
+    const client = getManagementApiClient();
+    const accountId = getAccountId();
+
+    const response = await client.mutation({
+      cancelPaymentOrder: {
+        __args: {
+          accountId,
+          input: { orderId },
+        },
+        id: true,
+        status: true,
+      },
+    });
+
+    const cancelledId = response.cancelPaymentOrder?.id as string | undefined;
+    if (cancelledId) {
+      console.log(`[refund] Cancelled Basta payment order ${orderId}`);
+      return true;
+    }
+
+    console.warn(
+      `[refund] cancelPaymentOrder returned no id for order ${orderId}`
+    );
+    return false;
+  } catch (e) {
+    console.error(
+      `[refund] Failed to cancel Basta payment order ${orderId}:`,
+      e
+    );
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Single lot refund
+// ---------------------------------------------------------------------------
+
+/**
+ * Process a refund for a single dropship lot.
+ *
+ * Steps:
+ * 1. Validate the lot is in a refundable state
+ * 2. Refund / void the Stripe invoice
+ * 3. Cancel the Basta payment order
+ * 4. Update the dropship lot status to CANCELLED
+ * 5. Update the local payment_orders record
+ */
+export async function refundDropshipLot(lot: DropshipLot): Promise<RefundResult> {
+  const lotId = lot.id;
+
+  console.log(
+    `[refund] Processing refund for lot ${lotId} (status: ${lot.status})`
+  );
+
+  // ── Step 1: Validate refundable state ──────────────────────────────────
+  if (
+    !REFUNDABLE_STATUSES.includes(lot.status as DropshipLotStatus) &&
+    lot.status !== "PAID" // PAID with error_message indicates CJ order creation failure
+  ) {
+    return {
+      success: false,
+      reason: `Lot ${lotId} is in status "${lot.status}", not refundable`,
+      lotId,
+    };
+  }
+
+  // For PAID lots, only refund if there's an error message (CJ order failure)
+  if (lot.status === "PAID" && !lot.error_message) {
+    return {
+      success: false,
+      reason: `Lot ${lotId} is PAID with no error — not a failed fulfillment`,
+      lotId,
+    };
+  }
+
+  // ── Step 2: Refund / void Stripe invoice ───────────────────────────────
+  let stripeRefundId: string | null = null;
+
+  if (lot.stripe_invoice_id) {
+    try {
+      const result = await refundStripeInvoice(lot.stripe_invoice_id);
+      stripeRefundId = result.refundId;
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      console.error(
+        `[refund] Stripe refund failed for lot ${lotId}:`,
+        e
+      );
+
+      await updateDropshipLot(lotId, {
+        error_message: `Refund failed: ${reason}`,
+      });
+
+      return { success: false, reason: `Stripe refund failed: ${reason}`, lotId };
+    }
+  } else {
+    console.log(
+      `[refund] Lot ${lotId} has no Stripe invoice, skipping Stripe refund`
+    );
+  }
+
+  // ── Step 3: Cancel Basta payment order ─────────────────────────────────
+  if (lot.basta_order_id) {
+    await cancelBastaPaymentOrder(lot.basta_order_id);
+  } else {
+    console.log(
+      `[refund] Lot ${lotId} has no Basta order, skipping Basta cancellation`
+    );
+  }
+
+  // ── Step 4: Update dropship lot status ─────────────────────────────────
+  const refundNote = stripeRefundId
+    ? `Refunded (Stripe refund: ${stripeRefundId})`
+    : lot.stripe_invoice_id
+      ? `Invoice voided (${lot.stripe_invoice_id})`
+      : "Cancelled (no invoice)";
+
+  await updateDropshipLot(lotId, {
+    status: "CANCELLED",
+    error_message: `${lot.error_message ?? lot.status} → ${refundNote}`,
+  });
+
+  // ── Step 5: Update local payment_orders record ─────────────────────────
+  if (lot.stripe_invoice_id) {
+    try {
+      const paymentOrder = await getPaymentOrderByInvoiceId(
+        lot.stripe_invoice_id
+      );
+      if (paymentOrder) {
+        await updatePaymentOrder(paymentOrder.basta_order_id, {
+          status: "REFUNDED",
+        });
+      }
+    } catch (e) {
+      console.warn(
+        `[refund] Failed to update payment_orders for lot ${lotId}:`,
+        e
+      );
+    }
+  }
+
+  console.log(`[refund] Lot ${lotId} refund complete: ${refundNote}`);
+
+  return { success: true, stripeRefundId, lotId };
+}
+
+// ---------------------------------------------------------------------------
+// Batch: process all failed lots
+// ---------------------------------------------------------------------------
+
+/**
+ * Find and refund all dropship lots in a CJ failure state.
+ *
+ * Collects lots with status CJ_OUT_OF_STOCK and CJ_PRICE_CHANGED, then
+ * processes refunds sequentially. One lot's failure does not block others.
+ */
+export async function refundAllFailedLots(): Promise<BatchRefundSummary> {
+  const failedLots: DropshipLot[] = [];
+
+  for (const status of REFUNDABLE_STATUSES) {
+    const lots = await getDropshipLotsByStatus(status);
+    failedLots.push(...lots);
+  }
+
+  console.log(
+    `[refund] Found ${failedLots.length} failed lots to refund`
+  );
+
+  const results: RefundResult[] = [];
+  let succeeded = 0;
+  let failed = 0;
+
+  for (const lot of failedLots) {
+    try {
+      const result = await refundDropshipLot(lot);
+      results.push(result);
+
+      if (result.success) {
+        succeeded++;
+      } else {
+        failed++;
+      }
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      console.error(`[refund] Unexpected error refunding lot ${lot.id}:`, e);
+      results.push({ success: false, reason, lotId: lot.id });
+      failed++;
+    }
+  }
+
+  console.log(
+    `[refund] Batch complete: ${succeeded} succeeded, ${failed} failed out of ${failedLots.length}`
+  );
+
+  return {
+    total: failedLots.length,
+    succeeded,
+    failed,
+    results,
+  };
+}
