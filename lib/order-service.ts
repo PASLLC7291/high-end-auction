@@ -145,6 +145,7 @@ export async function findExistingBastaOrder(
                             item: {
                                 __typename: true,
                                 on_Item: { id: true },
+                                on_SaleItem: { id: true },
                             },
                         },
                     },
@@ -172,7 +173,7 @@ export async function findExistingBastaOrder(
                     id: node.id as string,
                     saleId: saleId,
                     status: node.status as string,
-                    invoiceId: (node.invoiceId as string | null) ?? null,
+                    invoiceId: (node.invoiceId as string | null) || null,
                     orderLineItemIds: orderLines
                         .map((ol) => ol.item?.id)
                         .filter((id): id is string => !!id),
@@ -290,24 +291,33 @@ export async function addItemsToBastaOrder(params: {
 
         const fees = calculateFeesForAmount(item.amount, accountFees);
 
-        await client.mutation({
-            createOrderLine: {
-                __args: {
-                    accountId,
-                    input: {
-                        orderId,
-                        itemId: item.itemId,
-                        amount: item.amount,
-                        description: item.description,
-                        fees: fees.map((f) => ({
-                            description: f.description,
-                            amount: f.amount,
-                        })),
+        try {
+            await client.mutation({
+                createOrderLine: {
+                    __args: {
+                        accountId,
+                        input: {
+                            orderId,
+                            itemId: item.itemId,
+                            amount: item.amount,
+                            description: item.description,
+                            fees: fees.map((f) => ({
+                                description: f.description,
+                                amount: f.amount,
+                            })),
+                        },
                     },
+                    orderLineId: true,
                 },
-                orderLineId: true,
-            },
-        });
+            });
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (msg.includes("already exists")) {
+                console.log(`[order] Item ${item.itemId} already on order ${orderId}, skipping`);
+                continue;
+            }
+            throw e;
+        }
 
         // Audit log — fire-and-forget
         try {
