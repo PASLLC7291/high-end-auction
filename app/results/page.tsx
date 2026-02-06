@@ -68,7 +68,7 @@ async function getPastAuctions() {
     return sales.sales.edges
       .filter(({ node }) => {
         const title = node.title?.toLowerCase() || "";
-        const testKeywords = ["test", "e2e", "debug", "dropship", "headless"];
+        const testKeywords = ["test", "e2e", "debug", "headless"];
         return !testKeywords.some((kw) => title.includes(kw));
       })
       .map(({ node: sale }) => ({

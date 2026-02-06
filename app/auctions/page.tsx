@@ -42,7 +42,7 @@ type Auction = {
 };
 
 // Filter out test/dev auctions from display
-const TEST_KEYWORDS = ["test", "e2e", "debug", "dropship", "cj dropship", "headless"];
+const TEST_KEYWORDS = ["test", "e2e", "debug", "headless"];
 
 function isTestAuction(title: string | undefined | null): boolean {
   if (!title) return true;

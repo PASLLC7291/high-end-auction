@@ -303,8 +303,8 @@ async function commandSource() {
         __args: {
           accountId,
           input: {
-            title: `Dropship Auction — ${keyword}`,
-            description: `Auto-sourced: ${keyword}`,
+            title: `Placer Auctions — ${keyword.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}`,
+            description: `Browse and bid on ${keyword} items`,
             currency: "USD",
             closingMethod: "OVERLAPPING",
             closingTimeCountdown: 120000,
