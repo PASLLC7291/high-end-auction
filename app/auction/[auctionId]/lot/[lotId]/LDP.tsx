@@ -60,7 +60,7 @@ import { useClientApi } from "@bastaai/basta-js/client";
 import { mapItemToLot, mapSaleToSale, type SaleItemData, type Lot, type Sale } from "./lot-types";
 import { CountdownDisplay } from "./countdown";
 import { useToast } from "@/hooks/use-toast";
-import DOMPurify from "dompurify";
+import createDOMPurify from "dompurify";
 
 // Helper to format relative time
 function formatRelativeTime(dateString: string): string {
@@ -76,6 +76,14 @@ function formatRelativeTime(dateString: string): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString();
+}
+
+function stripHtml(html: string) {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .trim();
 }
 
 interface LotDetailPageProps {
@@ -529,15 +537,13 @@ export default function LotDetailPage({
         throw new Error(data.error || "Failed to update watchlist");
       }
 
-      setIsWatchlisted((prev) => {
-        const next = !prev;
-        toast({
-          title: next ? "Added to watchlist" : "Removed from watchlist",
-          description: next
-            ? "This lot will appear in your watchlist."
-            : "This lot has been removed from your watchlist.",
-        });
-        return next;
+      const next = !isWatchlisted;
+      setIsWatchlisted(next);
+      toast({
+        title: next ? "Added to watchlist" : "Removed from watchlist",
+        description: next
+          ? "This lot will appear in your watchlist."
+          : "This lot has been removed from your watchlist.",
       });
     } catch (error) {
       toast({
@@ -550,11 +556,30 @@ export default function LotDetailPage({
     }
   };
 
-  const rawDescription = lotData.description || "This painting captures the ethereal essence of dance, with faded, ghost-like figures gracefully moving across the canvas. At the center, a luminous figure emerges...";
-  const description = DOMPurify.sanitize(rawDescription);
-  const truncatedDescription = description.length > 150
-    ? DOMPurify.sanitize(description.slice(0, 150) + '...')
-    : description;
+  const rawDescription = lotData.description || "";
+  const plainDescription = useMemo(() => stripHtml(rawDescription), [rawDescription]);
+  const truncatedPlainDescription = useMemo(() => {
+    return plainDescription.length > 150
+      ? `${plainDescription.slice(0, 150)}...`
+      : plainDescription;
+  }, [plainDescription]);
+
+  const domPurify = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    return createDOMPurify(window);
+  }, []);
+  const [sanitizedDescription, setSanitizedDescription] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!domPurify) return;
+    setSanitizedDescription(domPurify.sanitize(rawDescription));
+  }, [domPurify, rawDescription]);
+
+  const truncatedSanitizedDescription = useMemo(() => {
+    if (!domPurify || sanitizedDescription == null) return null;
+    if (sanitizedDescription.length <= 150) return sanitizedDescription;
+    return domPurify.sanitize(`${sanitizedDescription.slice(0, 150)}...`);
+  }, [domPurify, sanitizedDescription]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -829,13 +854,21 @@ export default function LotDetailPage({
               {/* Description */}
               <div className="mb-6">
                 <p className="text-sm text-muted-foreground mb-1">Description</p>
-                <div
-                  className="text-sm leading-relaxed"
-                  dangerouslySetInnerHTML={{
-                    __html: showFullDescription ? description : truncatedDescription
-                  }}
-                />
-                {description.length > 150 && (
+                {sanitizedDescription ? (
+                  <div
+                    className="text-sm leading-relaxed"
+                    dangerouslySetInnerHTML={{
+                      __html: showFullDescription
+                        ? sanitizedDescription
+                        : (truncatedSanitizedDescription ?? sanitizedDescription),
+                    }}
+                  />
+                ) : (
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                    {showFullDescription ? plainDescription : truncatedPlainDescription}
+                  </div>
+                )}
+                {plainDescription.length > 150 && (
                   <button
                     onClick={() => setShowFullDescription(!showFullDescription)}
                     className="text-sm text-primary font-medium mt-1"

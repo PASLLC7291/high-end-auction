@@ -104,11 +104,11 @@ export function AuctionFooter() {
                 info@auctionhouse.com
               </a>
               <a
-                href="tel:+1234567890"
+                href="tel:+12345678900"
                 className="flex items-center gap-2 hover:text-foreground transition-colors"
               >
                 <Phone className="h-4 w-4" />
-                +1 (234) 567-890
+                +1 (234) 567-8900
               </a>
               <div className="flex items-start gap-2">
                 <MapPin className="h-4 w-4 mt-0.5 shrink-0" />

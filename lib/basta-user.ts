@@ -132,13 +132,21 @@ export async function getBastaUserShippingAddress(
 }
 
 // ---------------------------------------------------------------------------
-// Store shipping address on a Basta user via updateUser (upserts)
+// Store shipping address on a Basta user via upsertUserAddress + upsertUserPhone
 // ---------------------------------------------------------------------------
 
 const UPSERT_ADDRESS_MUTATION = `
-  mutation UpdateUser($accountId: String!, $input: UpdateUserInput!) {
-    updateUser(accountId: $accountId, input: $input) {
-      userId
+  mutation UpsertAddress($accountId: String!, $input: UpsertUserAddressInput!) {
+    upsertUserAddress(accountId: $accountId, input: $input) {
+      id
+    }
+  }
+`;
+
+const UPSERT_PHONE_MUTATION = `
+  mutation UpsertPhone($accountId: String!, $input: UpsertUserPhoneInput!) {
+    upsertUserPhone(accountId: $accountId, input: $input) {
+      id
     }
   }
 `;
@@ -149,28 +157,42 @@ export async function upsertBastaUserAddress(
 ): Promise<void> {
   const accountId = getAccountId();
 
+  // Upsert address
   await bastaGql(UPSERT_ADDRESS_MUTATION, {
     accountId,
     input: {
       userId,
       idType: "IDENTITY_PROVIDER_ID",
-      addresses: [
-        {
-          addressType: address.addressType,
-          isPrimary: address.isPrimary,
-          line1: address.line1,
-          line2: address.line2 || "",
-          city: address.city,
-          state: address.state || "",
-          postalCode: address.postalCode,
-          country: address.country,
-          name: address.name || "",
-          company: address.company || "",
-          phone: address.phone || "",
-        },
-      ],
+      address: {
+        addressType: address.addressType,
+        isPrimary: address.isPrimary,
+        line1: address.line1,
+        line2: address.line2 || "",
+        city: address.city,
+        state: address.state || "",
+        postalCode: address.postalCode,
+        country: address.country,
+        name: address.name || "",
+        company: address.company || "",
+      },
     },
   });
+
+  // Upsert phone separately (Basta stores phones as a separate entity)
+  if (address.phone) {
+    await bastaGql(UPSERT_PHONE_MUTATION, {
+      accountId,
+      input: {
+        userId,
+        idType: "IDENTITY_PROVIDER_ID",
+        phone: {
+          phoneType: "MOBILE",
+          isPrimary: true,
+          phoneNumber: address.phone,
+        },
+      },
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------

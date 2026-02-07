@@ -84,7 +84,7 @@ export default function PrivacyPage() {
           <h2>6. Cookies</h2>
           <p>
             We use cookies and similar technologies to enhance your experience. See our{" "}
-            <Link href="/cookies" className="text-primary hover:underline">
+            <Link href="/privacy#cookies" className="text-primary hover:underline">
               Cookie Policy
             </Link>{" "}
             for details on how we use cookies and how to manage your preferences.

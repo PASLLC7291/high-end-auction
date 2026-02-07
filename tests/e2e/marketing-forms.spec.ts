@@ -20,9 +20,27 @@ test("marketing forms: newsletter, contact, consultation, valuation", async ({ p
   // Newsletter signup (footer)
   const newsletterEmail = `newsletter_${uniqueSuffix}@example.com`;
   await page.goto("/");
-  await page.locator("#newsletter-email").fill(newsletterEmail);
-  await page.getByRole("button", { name: /subscribe/i }).click();
-  await expect(page.getByText("Subscribed!", { exact: true })).toBeVisible();
+  const newsletterEmailInput = page.locator("#newsletter-email");
+  await newsletterEmailInput.fill(newsletterEmail);
+  await expect(newsletterEmailInput).toHaveValue(newsletterEmail);
+
+  const [newsletterApiResponse] = await Promise.all([
+    page.waitForResponse((response) => {
+      return (
+        response.url().includes("/api/marketing/newsletter") &&
+        response.request().method() === "POST"
+      );
+    }),
+    page.getByRole("button", { name: /subscribe/i }).click(),
+  ]);
+  expect(newsletterApiResponse.ok(), await newsletterApiResponse.text()).toBe(true);
+  const newsletterJson = (await newsletterApiResponse.json().catch(() => ({}))) as {
+    message?: string;
+  };
+  await expect(
+    page.getByText(newsletterJson.message || "Subscribed!", { exact: true })
+  ).toBeVisible();
+  await expect(newsletterEmailInput).toHaveValue("");
 
   const newsletterRes = await db.execute({
     sql: "SELECT COUNT(1) AS count FROM lead_submissions WHERE type = ? AND email = ?",

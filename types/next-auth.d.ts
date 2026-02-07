@@ -9,6 +9,7 @@ declare module "next-auth" {
             email?: string | null;
         };
         bidderToken?: string;
+        bidderTokenExpiration?: string;
     }
 
     interface User {

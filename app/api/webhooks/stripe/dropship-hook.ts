@@ -358,13 +358,21 @@ function extractShippingAddress(
 
   if (!s.address?.line1 || !s.name) return null;
 
+  const city = s.address.city || "";
+  const state = s.address.state || "";
+  const postal_code = s.address.postal_code || "";
+
+  // Return null if critical fields are empty — the validation loop downstream
+  // can't detect empty strings since the fields technically "exist".
+  if (!city || !state || !postal_code) return null;
+
   return {
     name: s.name,
     line1: s.address.line1,
     line2: s.address.line2 || undefined,
-    city: s.address.city || "",
-    state: s.address.state || "",
-    postal_code: s.address.postal_code || "",
+    city,
+    state,
+    postal_code,
     country: s.address.country || "US",
     phone: s.phone || undefined,
   };

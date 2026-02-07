@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getManagementApiClient, getAccountId } from "@/lib/basta-client";
-import { upsertBastaUserAddress } from "@/lib/basta-user";
+import { upsertUserProfile } from "@/lib/user-profile";
 
 type RegisterBody = {
     saleId?: string;
@@ -61,28 +61,15 @@ export async function POST(request: NextRequest) {
         const client = getManagementApiClient();
         const accountId = getAccountId();
 
-        // Store shipping address on the user in Basta (blocking — fail registration if this fails)
-        try {
-            await upsertBastaUserAddress(session.user.id, {
-                addressType: "SHIPPING",
-                isPrimary: true,
-                line1: shippingAddress.line1,
-                line2: shippingAddress.line2,
-                city: shippingAddress.city,
-                state: shippingAddress.state,
-                postalCode: shippingAddress.postalCode,
-                country: shippingAddress.country,
-                name: shippingAddress.name || session.user.name || "",
-                phone: phone || identifier || "",
-            });
-        } catch (e) {
-            console.error("[register] Failed to store shipping address in Basta:", e);
-            return NextResponse.json(
-                { error: "Failed to store shipping address. Please try again." },
-                { status: 500 }
+        // Store phone locally so the fulfillment pipeline can always reach the bidder
+        if (phone) {
+            upsertUserProfile({ user_id: session.user.id, phone }).catch((e) =>
+                console.warn("[register] Local profile upsert failed:", e)
             );
         }
 
+        // Create the sale registration via Basta Management API
+        // (matches the reference create-basta-app pattern)
         const res = await client.mutation({
             createSaleRegistration: {
                 __args: {
@@ -91,9 +78,7 @@ export async function POST(request: NextRequest) {
                         saleId: saleId,
                         userId: session.user.id,
                         type: "ONLINE",
-                        identifier: identifier?.trim() ? identifier.trim() : null,
-                        // For bidder-facing registration flows we auto-accept to avoid manual approval loops.
-                        // If you want registrations to be reviewed first, remove this and handle PENDING states in the UI.
+                        identifier: identifier?.trim() || "",
                         status: "ACCEPTED",
                     }
                 },

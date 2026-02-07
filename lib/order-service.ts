@@ -377,6 +377,10 @@ export async function tryCreateStripeInvoice(params: {
     }
 
     try {
+        if (orderLines.length === 0) {
+            return { success: false, reason: "No order lines to invoice" };
+        }
+
         const invoice = await stripe.invoices.create({
             customer: profile.stripe_customer_id,
             collection_method: "charge_automatically",
@@ -384,7 +388,8 @@ export async function tryCreateStripeInvoice(params: {
             automatic_tax: { enabled: true },
             default_payment_method: profile.default_payment_method_id,
             metadata: { saleId, userId, bastaOrderId: orderId },
-        });
+            idempotency_key: `invoice-${orderId}`,
+        } as Parameters<typeof stripe.invoices.create>[0]);
 
         // Add line items: hammer price + fees for each item
         for (const line of orderLines) {
@@ -422,6 +427,9 @@ export async function tryCreateStripeInvoice(params: {
         }
 
         const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+        if (!finalized) {
+            return { success: false, reason: `Invoice finalization returned null for ${invoice.id}` };
+        }
         const hostedUrl = finalized.hosted_invoice_url || finalized.invoice_pdf || "";
 
         // Register invoice in Basta

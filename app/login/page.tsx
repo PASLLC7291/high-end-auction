@@ -55,7 +55,9 @@ function LoginContent() {
       if (result?.error) {
         setError("Invalid email or password. Please try again.");
       } else {
-        router.push(callbackUrl);
+        // Validate callbackUrl is a relative path to prevent open redirects
+        const safeUrl = callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/";
+        router.push(safeUrl);
         router.refresh();
       }
     } catch {

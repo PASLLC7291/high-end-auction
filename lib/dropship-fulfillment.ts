@@ -216,10 +216,12 @@ export async function fulfillDropshipLot(params: {
       // Confirm failure is non-fatal — order is created and paid
     }
 
-    // Calculate profit
+    // Calculate profit (only if winning bid is known)
     const totalCost = lot.cj_cost_cents + lot.cj_shipping_cents;
-    const profit = (lot.winning_bid_cents ?? 0) - totalCost;
-    await updateDropshipLot(lot.id, { profit_cents: profit });
+    if (lot.winning_bid_cents != null && lot.winning_bid_cents > 0) {
+      const profit = lot.winning_bid_cents - totalCost;
+      await updateDropshipLot(lot.id, { profit_cents: profit });
+    }
 
     return {
       success: true,
