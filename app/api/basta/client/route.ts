@@ -18,8 +18,12 @@ export async function POST(request: NextRequest) {
             accept: request.headers.get("accept") ?? "application/json",
         };
 
-        // Always prefer the server-side session token over any client-provided Authorization header.
-        if (session?.bidderToken) {
+        // Prefer the client-provided Authorization header (fresh token from /api/protected/token),
+        // fall back to the session's bidder token.
+        const clientAuth = request.headers.get("authorization");
+        if (clientAuth) {
+            headers.authorization = clientAuth;
+        } else if (session?.bidderToken) {
             headers.authorization = `Bearer ${session.bidderToken}`;
         }
 

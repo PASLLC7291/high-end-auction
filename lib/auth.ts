@@ -25,8 +25,7 @@ async function createBidderToken(userId: string): Promise<BidderTokenData | null
                     input: {
                         metadata: {
                             userId: userId,
-                            // Basta TTL is in minutes
-                            ttl: 60, // 1 hour
+                            ttl: 3600, // 1 hour in seconds
                         }
                     }
                 },
@@ -134,12 +133,15 @@ export const authOptions: NextAuthOptions = {
         },
         async session({ session, token }) {
             if (token && session.user) {
-                session.user.id = token.id;
+                if (token.id) session.user.id = token.id;
                 session.user.name = token.name;
                 session.user.email = token.email;
             }
             if (token.bidderToken) {
                 session.bidderToken = token.bidderToken as string;
+            }
+            if (token.bidderTokenExpiration) {
+                session.bidderTokenExpiration = token.bidderTokenExpiration as string;
             }
             return session;
         },
