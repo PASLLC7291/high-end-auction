@@ -253,9 +253,36 @@ This platform includes an automated dropship auction pipeline. The flow:
 
 The entire lifecycle is tracked in a local Turso (SQLite) database in the `dropship_lots` table. Each lot moves through a status chain from SOURCED to DELIVERED, with failure branches at each step.
 
-Pricing logic: starting bid is set at 50% of total cost (product + shipping), reserve price at 130% of total cost. Profit margin target is 30%+.
+### Two Sourcing Modes
 
-Auctions use the OVERLAPPING closing method with a 2-minute countdown extension. Sales open 1 hour after creation and close 25 hours later.
+**Standard sourcing** (`pnpm pipeline:source`): Single-keyword, small batch (max 5 items). Good for testing and daily cron. Uses simple percentage-based pricing (50% starting bid, 130% reserve). Consider migrating to the financial pricing model in the future.
+
+**Smart sourcing** (`pnpm pipeline:smart-source`): Multi-category, large batch (300+ items per auction). Two-phase scoring pipeline that searches 25 keywords across 6 categories, evaluates top 500 candidates in detail, and creates 3 auctions with staggered close dates. Uses the financial pricing model (see below).
+
+### Pricing Model (`lib/auction-pricing.ts`)
+
+Reserve prices are computed by a financial model that **guarantees non-negative profit** after all fees and risk buffers:
+
+```
+Reserve >= [C * (1 + CJ_buffer) * (1 + margin) + Stripe_fixed] / [(1 + BP) * (1 - Stripe_%)]
+```
+
+Where:
+- C = CJ product cost + shipping cost
+- CJ_buffer = 20% (price can rise this much before fulfillment guard aborts)
+- margin = 5% minimum safety profit
+- Stripe_% = 2.9%, Stripe_fixed = $0.30
+- BP = buyer premium rate (default 15%, configurable)
+
+Starting bids use **penny-staggered auction psychology**: xorshift hash produces unique non-round cent amounts ($2.87, $0.73, $4.91) tiered by cost. Low starts attract more bidders; non-round prices create organic appearance.
+
+**Fee structure (who pays what):**
+- Buyer pays: hammer price (winning bid) + buyer premium (configurable %, added to Stripe invoice)
+- Platform keeps: hammer price + buyer premium - Stripe fees - CJ cost
+- Stripe takes: 2.9% + $0.30 of total invoice amount (hammer + premium)
+- Account fees are configured via `tsx scripts/setup-account-fees.ts --list`
+
+Auctions use the OVERLAPPING closing method with a 2-minute countdown extension.
 
 ---
 
@@ -333,6 +360,27 @@ Without `--sale-id`: shows total lot counts by status, stuck lots, failed lots, 
 
 With `--sale-id`: shows Basta sale status, individual item statuses with winners and bids, plus local lot data.
 
+### `pnpm pipeline:smart-source`
+
+Smart sourcing agent for bulk auction creation. Searches broadly across categories, scores products on margin potential, and creates multiple auctions with custom close dates.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--publish` | (off) | Publish auctions after creation |
+| `--dry-run` | (off) | Score products only, don't create auctions |
+| `--resume <run-id>` | (none) | Resume an interrupted run |
+| `--num-auctions <n>` | `3` | Number of auctions to create |
+| `--items-per-auction <n>` | `300` | Target items per auction |
+| `--max-detail <n>` | `500` | Max products to evaluate in Phase 2 |
+| `--buyer-premium <rate>` | `0.15` | Buyer premium rate (0.15 = 15%) |
+
+**Three phases:**
+1. **Phase 1 (Wide Search, ~4 min):** Searches 25 keywords across 6 categories with 2 sort orders and up to 3 pages each (~160 CJ calls). Scores on popularity, price sweet spot ($3-$25), inventory depth, media quality, category diversity.
+2. **Phase 2 (Deep Evaluation, ~30 min):** Takes top 500 from Phase 1. For each: `getProduct` + `getInventoryByProduct` + `calculateFreight`. Smart variant selection (best markup-to-weight ratio). Scores on markup potential, shipping efficiency, image quality, margin.
+3. **Phase 3 (Auction Creation, ~60-90 min):** Distributes items via stratified round-robin across 3 auctions (Thu/Fri/Sat 8pm PST close). Creates Basta sales, uploads images, publishes. Uses financial pricing model for reserves and penny-staggered starting bids.
+
+Progress is saved to `data/smart-source-runs/<runId>.json` after each keyword (Phase 1) and every 10 products (Phase 2). Resume with `--resume <runId>`.
+
 ### `pnpm pipeline:keywords`
 
 Manages the keyword rotation for the auto-sourcing cron job.
@@ -382,7 +430,7 @@ SOURCED -> LISTED -> PUBLISHED -> AUCTION_CLOSED -> PAID -> CJ_ORDERED -> CJ_PAI
 ## Handling Failures
 
 ### RESERVE_NOT_MET
-**Action:** None required. This is normal -- it means the auction closed but the highest bid did not meet the reserve price (130% of total cost). No payment is collected. The product can be re-sourced in a future auction.
+**Action:** None required. This is normal -- it means the auction closed but the highest bid did not meet the reserve price. Reserves are computed by the financial pricing model (`lib/auction-pricing.ts`) to guarantee profit after Stripe fees, buyer premium, and CJ price fluctuation. No payment is collected. The product can be re-sourced in a future auction.
 
 ### PAYMENT_FAILED
 **Action:** Check the Stripe dashboard for the specific invoice. Common causes:
@@ -420,7 +468,7 @@ These conditions require human attention:
 - **CJ API quota below 100** on any endpoint -- Risk of pipeline halt. The free tier has 1,000 lifetime calls per endpoint. Critical endpoints: `/product/query`, `/product/stock/queryByVid`, `/logistic/freightCalculate`, `/shopping/order/createOrderV2`, `/shopping/pay/payBalance`
 - **Multiple fulfillment failures in a row** (>3 in a day) -- Indicates a systemic issue with CJ, shipping addresses, or balance
 - **Refund rate above 20%** -- Too many lots failing post-payment; review sourcing quality
-- **Negative profit margin** -- Losing money; review pricing strategy (reserve at 130% of cost may not be enough)
+- **Negative profit margin** -- Losing money; review the pricing model parameters in `lib/auction-pricing.ts` (safety margin, CJ fluctuation buffer). The financial model should guarantee profit, so negative margin indicates a bug or a parameter that needs adjusting
 - **Any lot stuck for >4 hours** -- Lots in AUCTION_CLOSED, PAID, or CJ_ORDERED should progress within minutes. Stuck lots indicate a webhook or cron failure
 - **Stripe webhook failures** -- Check Vercel function logs for the `/api/webhooks/stripe` endpoint
 - **CJ balance insufficient for orders** -- CJ orders are paid from CJ account balance (`payType: 2`). If balance is low, orders will fail at the payment step. Use `cj.getBalance()` to check.
@@ -482,13 +530,22 @@ All must be set in `.env.local` (local dev) or Vercel environment settings (prod
 
 ## Guardrails
 
-- **Max products per sourcing run: 5** -- Do not exceed to conserve CJ API quota. Each product requires 3-4 API calls (search, getProduct, getInventory, calculateFreight).
+### Standard Sourcing (`pnpm pipeline:source`)
+- **Max products per sourcing run: 5** -- Each product requires 3-4 API calls (search, getProduct, getInventory, calculateFreight). ~15-20 CJ calls per run.
+- **Max 2 standard sourcing runs per day** on the free CJ tier (1,000 lifetime calls per endpoint).
+
+### Smart Sourcing (`pnpm pipeline:smart-source`)
+- **~1,610 CJ API calls per full run** -- Phase 1 uses ~160 search calls, Phase 2 uses ~1,500 detail/inventory/freight calls. This is a **heavy quota consumer**. Do not run smart sourcing on the free CJ tier without verifying quota first.
+- **Always `--dry-run` first** -- Verify scoring distribution and category diversity before committing to auction creation.
+- **Resume interrupted runs** -- If a run is interrupted, use `--resume <runId>` rather than starting over. Progress is saved to `data/smart-source-runs/<runId>.json`.
+
+### Shared Guardrails
 - **Max wholesale cost: $50** -- Do not source items above this without explicit human approval. Higher-cost items increase financial risk on failed orders.
 - **Do not publish a sale without verifying images uploaded correctly** -- If image uploads fail silently, the listing will have no photos. Check the sourcing output for "Image X: uploaded" messages.
-- **Do not source more than 2x per day on the free CJ tier** -- The free tier has 1,000 lifetime calls per endpoint. Each sourcing run of 5 products uses roughly 15-20 API calls.
-- **Always check quota before sourcing** -- The `pipeline:source` command does this automatically. For manual operations, run `pnpm pipeline:status` and check the CJ API Quota section.
+- **Always check quota before sourcing** -- The `pipeline:source` command does this automatically. For smart sourcing, Phase 1 prints quota before Phase 2 begins. For manual checks, run `pnpm pipeline:status`.
 - **1.2-second delay between CJ API calls** -- The client enforces a 1,200ms sleep between consecutive CJ requests to avoid rate limiting. Do not bypass this.
 - **CJ access token lasts 15 days, refresh token 180 days** -- Tokens are persisted in `.cj-token.json` in the project root. If auth issues occur, delete this file to force re-authentication.
+- **Never sell below the computed reserve** -- The financial model in `lib/auction-pricing.ts` guarantees profit after Stripe fees, buyer premium, and CJ price fluctuation. Do not manually override reserves with lower values.
 
 ---
 
@@ -527,13 +584,18 @@ Max execution time: 120 seconds.
 
 | File | Purpose |
 |------|---------|
-| `scripts/orchestrate.ts` | CLI entry point. Dispatches to source, monitor, run, status, keywords subcommands. |
+| `scripts/orchestrate.ts` | CLI entry point for standard pipeline. Dispatches to source, monitor, run, status, keywords subcommands. |
+| `scripts/smart-source.ts` | CLI entry point for smart sourcing agent. Parses flags, invokes `runSmartSource()`. |
 | `lib/pipeline.ts` | Shared pipeline operations: poll closed sales, retry fulfillments, process refunds, dashboard, quota check, auto-source. Used by both CLI and cron. |
+| `lib/smart-sourcing.ts` | Smart sourcing engine: 3-phase pipeline (wide search, deep evaluation, auction creation). Scoring, stratified distribution, resumability via JSON checkpoints in `data/smart-source-runs/`. |
+| `lib/auction-pricing.ts` | Financial pricing model. `computeReserve()` guarantees profit after Stripe fees, buyer premium, and CJ price fluctuation. `computeStartingBid()` generates penny-staggered psychologically-tuned starting bids. `printPricingTable()` for diagnostics. |
+| `lib/sourcing-categories.ts` | Curated keyword list: 25 keywords across 6 categories (Electronics, Home, Fashion, Toys, Beauty, Sports). Used by smart sourcing agent. |
 | `lib/cj-client.ts` | CJ Dropshipping REST API client. Handles auth token management (15-day access, 180-day refresh), product search, inventory, freight, orders, payments, tracking. Base URL: `https://developers.cjdropshipping.com/api2.0/v1` |
 | `lib/dropship.ts` | DB operations for `dropship_lots` table. Insert, update, query by status/sale/item/order. Defines the `DropshipLotStatus` type union. |
 | `lib/dropship-fulfillment.ts` | Post-payment CJ order creation. Guards: re-checks inventory (out-of-stock aborts), re-checks price (>20% increase aborts). Creates order, pays from balance, confirms, calculates profit. |
 | `lib/dropship-refund.ts` | Stripe refund + Basta order cancellation for failed lots. Handles paid invoices (refund), open/draft invoices (void), and already-cancelled invoices (skip). |
 | `lib/sourcing-keywords.ts` | DB operations for `sourcing_keywords` table. Keyword rotation: get next (oldest + highest priority), mark sourced, insert, list, toggle, delete. |
+| `lib/order-service.ts` | Processes closed auction items into Basta orders and Stripe invoices. Calculates buyer premium fees via `calculateFeesForAmount()`. |
 
 ### Webhook Handlers
 
@@ -570,6 +632,7 @@ Max execution time: 120 seconds.
 | `package.json` | All `pipeline:*` script definitions. |
 | `.env.local` | Environment variables (not committed). |
 | `.cj-token.json` | Persisted CJ API access/refresh tokens (auto-generated, not committed). |
+| `data/smart-source-runs/<runId>.json` | Smart sourcing progress checkpoints. Auto-created during runs. Used for `--resume`. |
 
 ---
 
