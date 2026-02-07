@@ -40,6 +40,7 @@ export type BastaAddressInput = {
   country: string;
   name?: string;
   company?: string;
+  phone?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -137,7 +138,6 @@ export async function getBastaUserShippingAddress(
 const UPSERT_ADDRESS_MUTATION = `
   mutation UpdateUser($accountId: String!, $input: UpdateUserInput!) {
     updateUser(accountId: $accountId, input: $input) {
-      id
       userId
     }
   }
@@ -166,6 +166,7 @@ export async function upsertBastaUserAddress(
           country: address.country,
           name: address.name || "",
           company: address.company || "",
+          phone: address.phone || "",
         },
       ],
     },

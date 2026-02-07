@@ -117,6 +117,7 @@ export function RegistrationModal({
                 body: JSON.stringify({
                     saleId: auctionId,
                     identifier: values.phone,
+                    phone: values.phone,
                     shippingAddress: {
                         name: values.shippingName || undefined,
                         line1: values.line1,

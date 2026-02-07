@@ -7,6 +7,7 @@ import { upsertBastaUserAddress } from "@/lib/basta-user";
 type RegisterBody = {
     saleId?: string;
     identifier?: string;
+    phone?: string;
     shippingAddress?: {
         name?: string;
         line1?: string;
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = (await request.json()) as RegisterBody;
-        const { saleId, identifier, shippingAddress } = body;
+        const { saleId, identifier, phone, shippingAddress } = body;
 
         if (!saleId) {
             return NextResponse.json(
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
                 postalCode: shippingAddress.postalCode,
                 country: shippingAddress.country,
                 name: shippingAddress.name || session.user.name || "",
+                phone: phone || identifier || "",
             });
         } catch (e) {
             console.error("[register] Failed to store shipping address in Basta:", e);
