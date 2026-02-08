@@ -681,3 +681,240 @@ Delete `.cj-token.json` from the project root and retry. The client will re-auth
 
 **Images missing on auction listings:**
 Image upload can fail silently (CJ image download failure or Basta S3 PUT failure). Check the sourcing command output for "Image X: uploaded" vs warning messages. Re-source the products if images are critical.
+
+---
+
+# Autonomous Agent Harness
+
+## Overview
+
+The agent harness wraps the existing dropship pipeline with an LLM-powered autonomous agent system. Instead of running manual CLI commands and monitoring dashboards, Claude agents operate the pipeline autonomously via tool calling.
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────┐
+│              AGENT HARNESS                       │
+│  lib/agent/harness.ts                           │
+│  Anthropic SDK → Claude → tool_use loop         │
+│  + circuit breakers + shadow gate + ledger       │
+├──────────┬──────────────┬───────────────────────┤
+│ Pipeline │  Supplier    │  Platform             │
+│ Tools    │  Tools       │  Tools                │
+│ 21 tools │  8 tools     │  5 tools              │
+├──────────┴──────────────┴───────────────────────┤
+│           EXISTING LIB/ FUNCTIONS                │
+│  pipeline.ts │ cj-client.ts │ basta-client.ts   │
+│  dropship.ts │ smart-sourcing.ts │ pricing.ts   │
+│  order-service.ts │ alerts.ts │ email.ts        │
+└─────────────────────────────────────────────────┘
+```
+
+No pipeline code was rewritten. Every tool is a thin wrapper around an existing `lib/` function.
+
+---
+
+## Three Agents
+
+| Agent | ID | Model | Max Turns | Tools | Purpose |
+|-------|----|-------|-----------|-------|---------|
+| Operations | `ops` | claude-sonnet-4-20250514 | 15 | 18 (all pipeline + alert) | Poll closed sales, retry fulfillments, process refunds, handle stuck lots, check quota |
+| Sourcing | `sourcing` | claude-sonnet-4-20250514 | 10 | 11 (sourcing subset + CJ search + pricing) | Decide whether and what to source based on inventory levels and CJ quota |
+| Strategy | `strategy` | claude-sonnet-4-20250514 | 20 | 21 (all read-only tools) | Analyze financial health, category performance, pricing effectiveness |
+
+---
+
+## auctionctl CLI
+
+The primary human interface for the agent system. Run via `pnpm auctionctl`.
+
+| Command | Description |
+|---------|-------------|
+| `pnpm auctionctl run <agent>` | Run an agent (ops, sourcing, strategy). Flags: `--shadow`, `--max-turns <N>` |
+| `pnpm auctionctl cron` | Run ops then sourcing agents in sequence |
+| `pnpm auctionctl status` | Show pipeline status dashboard (same as `pnpm pipeline:status`) |
+| `pnpm auctionctl runs` | Show recent agent runs. Flags: `--agent <id>`, `--last <N>` |
+| `pnpm auctionctl decisions` | Show decisions for a run. Flags: `--run-id <id>`, `--last <N>` |
+| `pnpm auctionctl breakers` | Show circuit breaker states. Flag: `--reset <breaker-name>` |
+| `pnpm auctionctl shadow on\|off` | Toggle global shadow mode on/off |
+| `pnpm auctionctl replay <run-id>` | Replay a run's full decision chain |
+
+---
+
+## Shadow Mode
+
+Shadow mode lets agents run safely without side effects. All 12 side-effect tools return simulated `[SHADOW]` responses. Read-only tools execute normally against real data.
+
+**Activation:**
+- Per-run: `pnpm auctionctl run ops --shadow`
+- Global: `pnpm auctionctl shadow on` (forces all runs into shadow mode)
+- Env var: `AGENT_SHADOW_MODE="true"` in `.env.local`
+
+**Side-effect tools** (blocked in shadow mode): `pipeline_poll_closed_sales`, `pipeline_retry_fulfillments`, `pipeline_process_refunds`, `pipeline_handle_stuck_lots`, `pipeline_auto_source`, `pipeline_smart_source`, `lot_update`, `keyword_add`, `cj_create_order`, `cj_pay_order`, `alert_send`, `email_send`
+
+---
+
+## Circuit Breakers
+
+Six breakers prevent runaway agent behavior. State is persisted in the `circuit_breaker_state` DB table. Daily counters auto-reset at midnight UTC.
+
+| Breaker | Default Threshold | Protects Against |
+|---------|-------------------|------------------|
+| `daily_spending_cap` | $500/day | Runaway CJ spending |
+| `daily_lot_creation_cap` | 500 lots/day | Excessive sourcing |
+| `margin_floor` | -5% profit margin | Operating at a loss |
+| `max_consecutive_failures` | 5 failures | Broken tool loop |
+| `max_cj_orders_per_hour` | 20 orders/hour | CJ rate limit abuse |
+| `max_refunds_per_day` | 50 refunds/day | Mass refund cascade |
+
+When a breaker trips, the agent receives an error response and can adapt or stop. Reset via `pnpm auctionctl breakers --reset <name>`.
+
+---
+
+## Decision Ledger
+
+Every agent action is logged to the database for auditability:
+
+- **`agent_runs` table**: One row per run (correlationId, agent, status, turns, tool calls, summary)
+- **`agent_decisions` table**: One row per tool call (reasoning, tool name, args, result, duration, shadow mode, breaker trips)
+
+Query via:
+- `pnpm auctionctl runs` — List recent runs
+- `pnpm auctionctl decisions --run-id <id>` — Show all decisions for a run
+- `pnpm auctionctl replay <run-id>` — Full formatted replay
+
+---
+
+## State Machine
+
+Lot status transitions are validated by `lib/agent/state-machine.ts`. The `lot_update` tool checks `validateTransition(from, to)` before allowing status changes. Invalid transitions return an error to the agent.
+
+Valid transitions map all 14 statuses in `DropshipLotStatus`:
+```
+SOURCED → LISTED, CANCELLED
+LISTED → PUBLISHED, CANCELLED
+PUBLISHED → AUCTION_CLOSED, RESERVE_NOT_MET, CANCELLED
+AUCTION_CLOSED → PAID, PAYMENT_FAILED, CANCELLED
+PAID → CJ_ORDERED, CJ_OUT_OF_STOCK, CJ_PRICE_CHANGED, CANCELLED
+CJ_ORDERED → CJ_PAID, CANCELLED
+CJ_PAID → SHIPPED, CANCELLED
+SHIPPED → DELIVERED, CANCELLED
+DELIVERED → (terminal)
+RESERVE_NOT_MET → (terminal)
+CANCELLED → (terminal)
+PAYMENT_FAILED → PAID, CANCELLED
+CJ_OUT_OF_STOCK → CANCELLED
+CJ_PRICE_CHANGED → CANCELLED
+```
+
+---
+
+## Agent Cron Endpoints
+
+Two new cron endpoints run agents on schedule (alongside the existing pipeline crons):
+
+| Endpoint | Schedule | Agent | Max Duration |
+|----------|----------|-------|-------------|
+| `/api/cron/agent-process` | Daily 12 PM UTC | ops (maxTurns: 10) | 60s |
+| `/api/cron/agent-source` | Daily 8 AM UTC | sourcing | 120s |
+
+Auth: Bearer token matching `CRON_SECRET` env var. Configured in `vercel.json`.
+
+---
+
+## Tool Inventory (34 tools)
+
+### Pipeline Tools (`lib/agent/mcp/pipeline-server.ts`)
+
+| Tool | Side Effect | Description |
+|------|:-----------:|-------------|
+| `pipeline_get_dashboard` | | Full status dashboard: lot counts, stuck lots, financials |
+| `pipeline_get_financials` | | Financial summary: revenue, cost, profit, margin |
+| `pipeline_poll_closed_sales` | Yes | Process closed Basta sales, create orders/invoices |
+| `pipeline_retry_fulfillments` | Yes | Retry PAID lots for CJ fulfillment |
+| `pipeline_process_refunds` | Yes | Refund CJ_OUT_OF_STOCK and CJ_PRICE_CHANGED lots |
+| `pipeline_handle_stuck_lots` | Yes | Process lots stuck for >4 hours |
+| `pipeline_check_cj_quota` | | Check CJ API quota across all endpoints |
+| `pipeline_auto_source` | Yes | Standard single-keyword sourcing |
+| `pipeline_smart_source` | Yes | Multi-category bulk sourcing |
+| `lot_get_by_id` | | Query single lot by ID |
+| `lot_get_by_status` | | Query lots by status |
+| `lot_get_by_sale` | | Query lots by Basta sale ID |
+| `lot_get_all` | | Query all lots (with limit) |
+| `lot_get_status_counts` | | Count lots grouped by status |
+| `lot_update` | Yes | Update lot fields (validates status transitions) |
+| `keyword_list` | | List all sourcing keywords |
+| `keyword_add` | Yes | Add keyword to rotation |
+| `basta_get_sale_status` | | Query Basta sale status |
+| `basta_fetch_closed_sales` | | Fetch closed sales from Basta |
+| `basta_fetch_sale_items` | | Fetch items for a Basta sale |
+
+### Supplier Tools (`lib/agent/mcp/supplier-server.ts`)
+
+| Tool | Side Effect | Description |
+|------|:-----------:|-------------|
+| `cj_search_products` | | Search CJ products by keyword |
+| `cj_get_product` | | Get CJ product details |
+| `cj_get_inventory` | | Check CJ inventory by variant |
+| `cj_calculate_freight` | | Calculate CJ shipping costs |
+| `cj_create_order` | Yes | Create a CJ dropship order |
+| `cj_pay_order` | Yes | Pay a CJ order from balance |
+| `cj_get_order_detail` | | Get CJ order details |
+| `cj_get_balance` | | Check CJ account balance |
+
+### Platform Tools (`lib/agent/mcp/platform-server.ts`)
+
+| Tool | Side Effect | Description |
+|------|:-----------:|-------------|
+| `pricing_compute` | | Full pricing breakdown for a product |
+| `pricing_compute_reserve` | | Compute reserve price only |
+| `pricing_compute_starting_bid` | | Compute starting bid only |
+| `alert_send` | Yes | Send pipeline alert (Discord/Slack/webhook) |
+| `email_send` | Yes | Send transactional email |
+
+---
+
+## Agent Harness File Map
+
+| File | Purpose |
+|------|---------|
+| `lib/agent/types.ts` | All shared types: AgentId, AgentConfig, ToolResult, ToolHandler, ToolDefinition, CircuitBreakerConfig, DecisionLedgerEntry, AgentRunResult. Includes `zodToJsonSchema()` converter. |
+| `lib/agent/harness.ts` | Main agent loop: Anthropic SDK, tool_use processing, turn counting, decision logging, error handling. Entry point: `runAgent()`. |
+| `lib/agent/tool-dispatch.ts` | Tool dispatcher: shadow gate + circuit breaker integration. `buildToolDispatcher()` wraps every tool call. |
+| `lib/agent/decision-ledger.ts` | DB operations for `agent_runs` and `agent_decisions` tables. `startRun()`, `completeRun()`, `logDecision()`, `getRecentRuns()`, `getDecisionsForRun()`, `getRunById()`. |
+| `lib/agent/circuit-breakers.ts` | Circuit breaker state management. `checkCircuitBreakers()`, `initBreakerState()`, `getBreakerState()`, `tripBreaker()`, `resetBreaker()`, `incrementBreaker()`. |
+| `lib/agent/state-machine.ts` | Lot status transition validation. `validateTransition()`, `getValidNextStatuses()`, `getTerminalStatuses()`. |
+| `lib/agent/shadow-gate.ts` | Shadow mode gate. `isSideEffect()`, `shadowResult()`. 12 side-effect tools defined in `SIDE_EFFECT_TOOLS` set. |
+| `lib/agent/mcp/pipeline-server.ts` | 21 pipeline tools wrapping `lib/pipeline.ts`, `lib/dropship.ts`, `lib/sourcing-keywords.ts`, `lib/smart-sourcing.ts`. |
+| `lib/agent/mcp/supplier-server.ts` | 8 CJ tools wrapping `lib/cj-client.ts`. |
+| `lib/agent/mcp/platform-server.ts` | 5 platform tools wrapping `lib/auction-pricing.ts`, `lib/alerts.ts`, `lib/email.ts`. |
+| `lib/agent/mcp/index.ts` | Tool barrel: `getAllTools()`, `getToolsByNames()`, `getToolDefinitions()`. |
+| `lib/agent/agents/ops-agent.ts` | Operations agent system prompt + config (18 tools, 15 turns). |
+| `lib/agent/agents/sourcing-agent.ts` | Sourcing agent system prompt + config (11 tools, 10 turns). |
+| `lib/agent/agents/strategy-agent.ts` | Strategy agent system prompt + config (21 read-only tools, 20 turns). |
+| `lib/agent/agents/index.ts` | Agent registry: `getAgentConfig()`, `listAgents()`. |
+| `scripts/auctionctl.ts` | CLI entry point: run, cron, status, runs, decisions, breakers, shadow, replay. |
+| `db/migrations/001-agent-harness.sql` | DB migration: `agent_runs`, `agent_decisions`, `circuit_breaker_state` tables. |
+| `app/api/cron/agent-process/route.ts` | Cron endpoint for ops agent. |
+| `app/api/cron/agent-source/route.ts` | Cron endpoint for sourcing agent. |
+
+---
+
+## Agent Environment Variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `ANTHROPIC_API_KEY` | Yes (for agents) | Anthropic API key for Claude calls |
+| `AGENT_SHADOW_MODE` | No | Set to `"true"` to force all agent runs into shadow mode |
+| `CRON_SECRET` | Yes (for cron) | Bearer token for Vercel cron authentication |
+
+---
+
+## Quick Start: First Agent Run
+
+1. Set `ANTHROPIC_API_KEY` in `.env.local`
+2. Run `pnpm db:init` to create agent tables
+3. Run `pnpm auctionctl shadow on` to enable global shadow mode
+4. Run `pnpm auctionctl run ops --shadow` for a safe test run
+5. Run `pnpm auctionctl runs --last 1` to see the run summary
+6. Run `pnpm auctionctl replay <run-id>` to see the full decision chain
+7. When confident, `pnpm auctionctl shadow off` and run live
