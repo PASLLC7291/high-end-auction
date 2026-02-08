@@ -6,7 +6,7 @@ import { join, resolve } from "path";
 config({ path: resolve(process.cwd(), ".env.local"), quiet: true });
 
 import { createClient } from "@libsql/client";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 
 async function initDatabase() {
     const url = process.env.TURSO_DATABASE_URL?.trim() || "file:./db/local.db";
@@ -22,6 +22,15 @@ async function initDatabase() {
     const tx = await db.transaction("write");
     try {
         await tx.executeMultiple(schema);
+
+        // Run agent harness migration if it exists
+        const agentMigrationPath = join(process.cwd(), "db", "migrations", "001-agent-harness.sql");
+        if (existsSync(agentMigrationPath)) {
+            const agentMigration = readFileSync(agentMigrationPath, "utf-8");
+            await tx.executeMultiple(agentMigration);
+            console.log("Agent harness migration applied.");
+        }
+
         await tx.commit();
         console.log("Database initialized successfully!");
     } catch (error) {
