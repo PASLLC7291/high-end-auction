@@ -16,6 +16,7 @@ import {
   handleStuckLots,
 } from "@/lib/pipeline";
 import { sendAlert } from "@/lib/alerts";
+import { db } from "@/lib/turso";
 
 export const maxDuration = 60;
 
@@ -29,6 +30,23 @@ export async function GET(request: NextRequest) {
   }
 
   const results: Record<string, unknown> = {};
+
+  // Guard: Daily spending cap ($500)
+  try {
+    const todaySpend = await db.execute({
+      sql: `SELECT COALESCE(SUM(total_cost_cents), 0) as total FROM dropship_lots
+            WHERE status IN ('CJ_ORDERED','CJ_PAID','SHIPPED','DELIVERED')
+            AND DATE(updated_at) = DATE('now')`,
+      args: [],
+    });
+    const spendTotal = Number(todaySpend.rows[0]?.total ?? 0);
+    if (spendTotal > 50000) { // $500
+      await sendAlert("Daily spending cap reached ($500). Halting operations.", "critical");
+      return NextResponse.json({ ok: true, halted: "spending_cap", todaySpendCents: spendTotal });
+    }
+  } catch (e) {
+    console.error("[cron] Spending cap check failed (continuing):", e);
+  }
 
   // Step 1: Poll for closed sales (catch missed webhooks)
   try {
@@ -57,9 +75,15 @@ export async function GET(request: NextRequest) {
     await sendAlert(`processRefunds failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  // Step 4: Attach financial summary
+  // Step 4: Attach financial summary + margin floor guard
   try {
-    results.financials = await getFinancialSummary();
+    const financials = await getFinancialSummary();
+    results.financials = financials;
+
+    if (financials.profitMargin < -5) {
+      await sendAlert(`Margin floor breached: ${financials.profitMargin.toFixed(1)}%. Halting operations.`, "critical");
+      return NextResponse.json({ ok: true, halted: "margin_floor", results });
+    }
   } catch (e) {
     console.error("[cron] getFinancialSummary failed:", e);
     results.financials = { error: e instanceof Error ? e.message : String(e) };

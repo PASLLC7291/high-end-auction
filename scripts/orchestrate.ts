@@ -12,9 +12,7 @@ import { config } from "dotenv";
 import { resolve } from "path";
 config({ path: resolve(process.cwd(), ".env.local") });
 
-import { CJClient } from "../lib/cj-client";
-import { getManagementApiClient, getAccountId } from "../lib/basta-client";
-import { insertDropshipLot, updateDropshipLot, getDropshipLotsBySale } from "../lib/dropship";
+import { getDropshipLotsBySale } from "../lib/dropship";
 import {
   pollAndProcessClosedSales,
   retryFailedFulfillments,
@@ -22,6 +20,7 @@ import {
   getSaleStatus,
   getStatusDashboard,
   checkCjQuota,
+  runAutoSource,
   type QuotaReport,
 } from "../lib/pipeline";
 import {
@@ -45,7 +44,6 @@ function hasFlag(name: string): boolean {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const CJ_DELAY_MS = 1200;
 
 // ---------------------------------------------------------------------------
 // Quota display helper
@@ -80,7 +78,7 @@ function printQuotaReport(report: QuotaReport): void {
 }
 
 // ---------------------------------------------------------------------------
-// source — CJ sourcing + Basta sale creation
+// source — CJ sourcing + Basta sale creation (delegates to runAutoSource)
 // ---------------------------------------------------------------------------
 
 async function commandSource() {
@@ -94,16 +92,6 @@ async function commandSource() {
   console.log(`  Max cost:     $${maxCost}`);
   console.log(`  Max products: ${maxProducts}`);
   console.log(`  Publish:      ${publish}\n`);
-
-  const cjApiKey = process.env.CJ_API_KEY?.trim();
-  if (!cjApiKey) {
-    console.error("Missing CJ_API_KEY in .env.local");
-    process.exit(1);
-  }
-
-  const cj = new CJClient(cjApiKey);
-  const bastaClient = getManagementApiClient();
-  const accountId = getAccountId();
 
   // Pre-flight: Check CJ API quota
   try {
@@ -122,418 +110,27 @@ async function commandSource() {
     console.warn("[source] Failed to check CJ quota (non-blocking):", e);
   }
 
-  // Step 1: Search CJ
-  console.log(`[1/7] Searching CJ for "${keyword}"...`);
-  const searchResult = await cj.searchProducts({
-    keyWord: keyword,
-    size: maxProducts * 2,
-    countryCode: "US",
-    orderBy: 1,
+  const result = await runAutoSource({
+    keyword,
+    maxCostUsd: maxCost,
+    maxProducts,
+    publish,
   });
 
-  console.log(`  Found ${searchResult.totalRecords} total, fetched ${searchResult.products.length}\n`);
-
-  if (!searchResult.products.length) {
-    console.log("No products found. Try a different keyword.");
+  if (!result.saleId) {
+    console.log("No products sourced. Try a different keyword or increase --max-cost.");
     return;
   }
 
-  // Step 2: Get details, check inventory, calc freight
-  console.log("[2/7] Checking inventory & freight...\n");
-
-  type SourcingCandidate = {
-    pid: string;
-    vid: string;
-    productName: string;
-    variantName: string;
-    costCents: number;
-    shippingCents: number;
-    logisticName: string;
-    fromCountry: string;
-    images: string[];
-    description: string;
-    startingBidCents: number;
-    reserveCents: number;
-    totalCostCents: number;
-  };
-
-  const candidates: SourcingCandidate[] = [];
-  const seenVids = new Set<string>();
-
-  for (const product of searchResult.products) {
-    if (candidates.length >= maxProducts) break;
-
-    const priceStr = product.sellPrice.split(/\s*--\s*/)[0];
-    const costUsd = parseFloat(priceStr);
-    if (isNaN(costUsd) || costUsd > maxCost) {
-      console.log(`  SKIP ${product.nameEn} — $${costUsd} > max $${maxCost}`);
-      continue;
-    }
-
-    if (product.warehouseInventoryNum < 1) {
-      console.log(`  SKIP ${product.nameEn} — out of stock`);
-      continue;
-    }
-
-    await sleep(CJ_DELAY_MS);
-    let fullProduct;
-    try {
-      fullProduct = await cj.getProduct({ pid: product.id });
-    } catch (e) {
-      console.log(`  SKIP ${product.nameEn} — failed to get details: ${e}`);
-      continue;
-    }
-
-    const variants = fullProduct.variants ?? [];
-    const variant = variants[0];
-    if (!variant) {
-      console.log(`  SKIP ${product.nameEn} — no variants`);
-      continue;
-    }
-
-    if (seenVids.has(variant.vid)) {
-      console.log(`  SKIP ${product.nameEn} — duplicate VID ${variant.vid}`);
-      continue;
-    }
-    seenVids.add(variant.vid);
-
-    await sleep(CJ_DELAY_MS);
-    let inventory;
-    try {
-      inventory = await cj.getInventoryByVariant(variant.vid);
-    } catch {
-      console.log(`  SKIP ${product.nameEn} — inventory check failed`);
-      continue;
-    }
-
-    const totalStock = inventory.reduce((sum, inv) => sum + inv.totalInventoryNum, 0);
-    if (totalStock < 1) {
-      console.log(`  SKIP ${product.nameEn} — variant out of stock`);
-      continue;
-    }
-
-    const fromCountry = inventory.find((i) => i.totalInventoryNum > 0)?.countryCode ?? "CN";
-
-    await sleep(CJ_DELAY_MS);
-    let freightOptions;
-    try {
-      freightOptions = await cj.calculateFreight({
-        startCountryCode: fromCountry,
-        endCountryCode: "US",
-        products: [{ vid: variant.vid, quantity: 1 }],
-      });
-    } catch {
-      console.log(`  SKIP ${product.nameEn} — freight calc failed`);
-      continue;
-    }
-
-    if (!freightOptions.length) {
-      console.log(`  SKIP ${product.nameEn} — no shipping options`);
-      continue;
-    }
-
-    const cheapest = freightOptions.sort((a, b) => a.logisticPrice - b.logisticPrice)[0];
-
-    const costCents = Math.round(variant.variantSellPrice * 100);
-    const shippingCents = Math.round(cheapest.logisticPrice * 100);
-    const totalCostCents = costCents + shippingCents;
-    const startingBidCents = Math.round(totalCostCents * 0.5);
-    const reserveCents = Math.round(totalCostCents * 1.3);
-
-    const images = fullProduct.productImageSet?.length
-      ? fullProduct.productImageSet
-      : [product.bigImage].filter(Boolean);
-
-    candidates.push({
-      pid: fullProduct.pid,
-      vid: variant.vid,
-      productName: fullProduct.productNameEn || product.nameEn,
-      variantName: variant.variantNameEn || "",
-      costCents,
-      shippingCents,
-      logisticName: cheapest.logisticName,
-      fromCountry,
-      images,
-      description: fullProduct.description || product.nameEn,
-      startingBidCents,
-      reserveCents,
-      totalCostCents,
-    });
-
-    console.log(
-      `  OK ${product.nameEn} — $${(costCents / 100).toFixed(2)} + ship $${(shippingCents / 100).toFixed(2)} = $${(totalCostCents / 100).toFixed(2)} | reserve $${(reserveCents / 100).toFixed(2)} | stock ${totalStock}`
-    );
-  }
-
-  console.log(`\n  ${candidates.length} products ready to list\n`);
-
-  if (!candidates.length) {
-    console.log("No viable products. Try different search terms or increase --max-cost.");
-    return;
-  }
-
-  // Step 3: Save to local DB
-  console.log("[3/7] Saving sourcing data to local DB...");
-  const lotIds: string[] = [];
-  for (const c of candidates) {
-    const lotId = await insertDropshipLot({
-      cj_pid: c.pid,
-      cj_vid: c.vid,
-      cj_product_name: c.productName,
-      cj_variant_name: c.variantName,
-      cj_cost_cents: c.costCents,
-      cj_shipping_cents: c.shippingCents,
-      cj_logistic_name: c.logisticName,
-      cj_from_country: c.fromCountry,
-      cj_images: c.images,
-      starting_bid_cents: c.startingBidCents,
-      reserve_cents: c.reserveCents,
-    });
-    lotIds.push(lotId);
-    console.log(`  Saved lot ${lotId} — ${c.productName}`);
-  }
-  console.log("");
-
-  // Step 4: Create Basta sale
-  console.log("[4/7] Creating Basta sale...");
-  let saleId: string;
-  try {
-    const saleResult = await bastaClient.mutation({
-      createSale: {
-        __args: {
-          accountId,
-          input: {
-            title: `Placer Auctions — ${keyword.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}`,
-            description: `Browse and bid on ${keyword} items`,
-            currency: "USD",
-            closingMethod: "OVERLAPPING",
-            closingTimeCountdown: 120000,
-            bidIncrementTable: {
-              rules: [
-                { lowRange: 0, highRange: 1000, step: 100 },
-                { lowRange: 1000, highRange: 5000, step: 250 },
-                { lowRange: 5000, highRange: 10000, step: 500 },
-                { lowRange: 10000, highRange: 50000, step: 1000 },
-              ],
-            },
-          },
-        },
-        id: true,
-        title: true,
-        status: true,
-      },
-    });
-
-    saleId = saleResult.createSale?.id as string;
-    if (!saleId) throw new Error("No sale ID returned from Basta");
-  } catch (e: unknown) {
-    const err = e as { errors?: Array<{ message: string; extensions?: Record<string, unknown> }> };
-    console.error("  Basta createSale failed:");
-    if (err.errors) {
-      for (const gqlErr of err.errors) {
-        console.error("    -", gqlErr.message, gqlErr.extensions ?? "");
-      }
-    } else {
-      console.error("   ", e);
-    }
-    throw e;
-  }
-  console.log(`  Created sale: ${saleId}`);
-
-  // Attach registration policy requiring shipping address
-  try {
-    const apiKey = process.env.API_KEY?.trim() ?? "";
-    const gqlUrl = "https://management.api.basta.app/graphql";
-    const gqlHeaders = {
-      "Content-Type": "application/json",
-      "x-account-id": accountId,
-      "x-api-key": apiKey,
-    };
-
-    const policyRes = await fetch(gqlUrl, {
-      method: "POST",
-      headers: gqlHeaders,
-      body: JSON.stringify({
-        query: `mutation ($accountId: String!, $input: CreateSaleRegistrationPolicyInput!) {
-          createSaleRegistrationPolicy(accountId: $accountId, input: $input) { id code }
-        }`,
-        variables: {
-          accountId,
-          input: {
-            code: "require_shipping_address",
-            description: "Bidders must provide a shipping address before bidding",
-            rule: 'size(user.addresses.filter(a, a.addressType == "SHIPPING")) > 0',
-          },
-        },
-      }),
-    });
-
-    const policyData = (await policyRes.json()) as {
-      data?: { createSaleRegistrationPolicy?: { id: string; code: string } };
-    };
-    const policyId = policyData.data?.createSaleRegistrationPolicy?.id;
-
-    if (policyId) {
-      await fetch(gqlUrl, {
-        method: "POST",
-        headers: gqlHeaders,
-        body: JSON.stringify({
-          query: `mutation ($accountId: String!, $input: AttachSaleRegistrationPoliciesInput!) {
-            attachSaleRegistrationPolicies(accountId: $accountId, input: $input) { id }
-          }`,
-          variables: {
-            accountId,
-            input: { saleId, policyIds: [policyId] },
-          },
-        }),
-      });
-      console.log(`  Attached shipping address policy: ${policyId}`);
-    }
-  } catch (e) {
-    console.warn("  Failed to create/attach registration policy (non-blocking):", e);
-  }
-  console.log("");
-
-  // Step 5: Create items in the sale
-  console.log("[5/7] Adding items to sale...\n");
-
-  const openDate = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-  const closingDate = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString();
-
-  for (let i = 0; i < candidates.length; i++) {
-    const c = candidates[i];
-    const lotId = lotIds[i];
-
-    try {
-      const itemResult = await bastaClient.mutation({
-        createItemForSale: {
-          __args: {
-            accountId,
-            input: {
-              saleId,
-              title: c.productName,
-              description: c.description,
-              startingBid: c.startingBidCents,
-              reserve: c.reserveCents,
-              openDate,
-              closingDate,
-              allowedBidTypes: ["MAX", "NORMAL"],
-              ItemNumber: i + 1,
-            },
-          },
-          id: true,
-          title: true,
-        },
-      });
-
-      const itemId = itemResult.createItemForSale?.id as string;
-      if (!itemId) throw new Error("No item ID returned");
-
-      // Upload images via Basta's signed URL flow
-      for (let j = 0; j < c.images.length; j++) {
-        try {
-          const uploadResult = await bastaClient.mutation({
-            createUploadUrl: {
-              __args: {
-                accountId,
-                input: {
-                  imageTypes: ["SALE_ITEM"],
-                  contentType: "image/jpeg",
-                  order: j + 1,
-                  saleId,
-                  itemId,
-                },
-              },
-              imageId: true,
-              uploadUrl: true,
-              imageUrl: true,
-              headers: { key: true, value: true },
-            },
-          });
-
-          const uploadData = uploadResult.createUploadUrl;
-          if (!uploadData?.uploadUrl) {
-            console.warn(`    Image ${j + 1}: no upload URL returned`);
-            continue;
-          }
-
-          const imgResponse = await fetch(c.images[j]);
-          if (!imgResponse.ok) {
-            console.warn(`    Image ${j + 1}: CJ download failed (${imgResponse.status})`);
-            continue;
-          }
-          const imgBuffer = Buffer.from(await imgResponse.arrayBuffer());
-
-          const putHeaders: Record<string, string> = { "Content-Type": "image/jpeg" };
-          for (const h of uploadData.headers ?? []) {
-            if (h.key !== "Host") {
-              putHeaders[h.key] = h.value;
-            }
-          }
-
-          const putResponse = await fetch(uploadData.uploadUrl, {
-            method: "PUT",
-            headers: putHeaders,
-            body: imgBuffer,
-          });
-
-          if (putResponse.ok) {
-            console.log(`    Image ${j + 1}: uploaded → ${uploadData.imageUrl}`);
-          } else {
-            console.warn(`    Image ${j + 1}: S3 PUT failed (${putResponse.status})`);
-          }
-        } catch (imgErr) {
-          console.warn(`    Image upload failed: ${imgErr}`);
-        }
-      }
-
-      await updateDropshipLot(lotId, {
-        basta_sale_id: saleId,
-        basta_item_id: itemId,
-        status: "LISTED",
-      });
-
-      console.log(`  [${i + 1}/${candidates.length}] ${c.productName} → item ${itemId}`);
-    } catch (error) {
-      console.error(`  [${i + 1}/${candidates.length}] FAILED: ${c.productName}`, error);
-      await updateDropshipLot(lotId, {
-        status: "CANCELLED",
-        error_message: String(error),
-      });
-    }
-  }
-
-  // Step 6: Optionally publish
-  if (publish) {
-    console.log("\n[6/7] Publishing sale...");
-    await bastaClient.mutation({
-      publishSale: {
-        __args: { accountId, input: { saleId } },
-        id: true,
-        status: true,
-      },
-    });
-
-    for (const lotId of lotIds) {
-      await updateDropshipLot(lotId, { status: "PUBLISHED" });
-    }
-    console.log("  Sale published!");
-  } else {
-    console.log("\n[6/7] Skipping publish (use --publish to auto-publish)");
-  }
-
-  // Summary
   console.log("\n═══════════════════════════════════════════════════════════");
   console.log("                    SOURCING COMPLETE");
   console.log("═══════════════════════════════════════════════════════════");
-  console.log(`Sale ID:        ${saleId}`);
-  console.log(`Items listed:   ${candidates.length}`);
-  console.log(`Opens at:       ${openDate}`);
-  console.log(`Closes at:      ${closingDate}`);
-  console.log(`Dashboard:      https://dashboard.basta.app/sales/${saleId}`);
+  console.log(`Sale ID:        ${result.saleId}`);
+  console.log(`Items listed:   ${result.lotsCreated}`);
+  console.log(`Dashboard:      https://dashboard.basta.app/sales/${result.saleId}`);
   console.log("═══════════════════════════════════════════════════════════");
 
-  return saleId;
+  return result.saleId;
 }
 
 // ---------------------------------------------------------------------------
@@ -830,8 +427,14 @@ Actions:
 
 const subcommand = process.argv[2];
 
+async function commandSmartSource() {
+  console.log("Smart sourcing has been removed. Use standard sourcing:");
+  console.log("  pnpm pipeline:source --keyword <term> --max-cost <usd> --max-products <n> --publish");
+}
+
 const commands: Record<string, () => Promise<void | string>> = {
   source: commandSource,
+  "smart-source": commandSmartSource,
   monitor: commandMonitor,
   run: commandRun,
   status: commandStatus,

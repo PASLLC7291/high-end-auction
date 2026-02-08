@@ -29,8 +29,7 @@
     "pipeline:run": "tsx scripts/orchestrate.ts run",
     "pipeline:status": "tsx scripts/orchestrate.ts status",
     "pipeline:keywords": "tsx scripts/orchestrate.ts keywords",
-    "pipeline:smart-source": "tsx scripts/smart-source.ts",
-    "auctionctl": "tsx scripts/auctionctl.ts"
+    "strategy:report": "tsx scripts/strategy-report.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",

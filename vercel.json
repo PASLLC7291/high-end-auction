@@ -7,14 +7,6 @@
     {
       "path": "/api/cron/source",
       "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/cron/agent-process",
-      "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/cron/agent-source",
-      "schedule": "0 8 * * *"
     }
   ]
 }

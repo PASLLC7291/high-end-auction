@@ -24,6 +24,13 @@ import {
 import { fulfillAllPaidLots } from "@/lib/dropship-fulfillment";
 import { refundAllFailedLots, type BatchRefundSummary } from "@/lib/dropship-refund";
 import { sendAlert } from "@/lib/alerts";
+import { computePricing } from "@/lib/auction-pricing";
+import {
+  DEFAULT_BID_INCREMENT_RULES,
+  DEFAULT_BUYER_PREMIUM_RATE,
+  attachShippingAddressPolicy,
+  uploadItemImages,
+} from "@/lib/auction-helpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -969,9 +976,14 @@ export async function runAutoSource(params: {
 
     const costCents = Math.round(variant.variantSellPrice * 100);
     const shippingCents = Math.round(cheapest.logisticPrice * 100);
-    const totalCostCents = costCents + shippingCents;
-    const startingBidCents = Math.round(totalCostCents * 0.5);
-    const reserveCents = Math.round(totalCostCents * 1.3);
+    const pricing = computePricing({
+      productCostCents: costCents,
+      shippingCostCents: shippingCents,
+      buyerPremiumRate: DEFAULT_BUYER_PREMIUM_RATE,
+    });
+    const totalCostCents = pricing.totalCostCents;
+    const startingBidCents = pricing.startingBidCents;
+    const reserveCents = pricing.reserveCents;
 
     const images = fullProduct.productImageSet?.length
       ? fullProduct.productImageSet
@@ -1034,12 +1046,7 @@ export async function runAutoSource(params: {
           closingMethod: "OVERLAPPING",
           closingTimeCountdown: 120000,
           bidIncrementTable: {
-            rules: [
-              { lowRange: 0, highRange: 1000, step: 100 },
-              { lowRange: 1000, highRange: 5000, step: 250 },
-              { lowRange: 5000, highRange: 10000, step: 500 },
-              { lowRange: 10000, highRange: 50000, step: 1000 },
-            ],
+            rules: [...DEFAULT_BID_INCREMENT_RULES],
           },
         },
       },
@@ -1055,57 +1062,7 @@ export async function runAutoSource(params: {
   console.log(`[auto-source] Created Basta sale: ${saleId}`);
 
   // Attach shipping address policy
-  try {
-    const apiKey = process.env.API_KEY?.trim() ?? "";
-    const gqlUrl = "https://management.api.basta.app/graphql";
-    const gqlHeaders = {
-      "Content-Type": "application/json",
-      "x-account-id": accountId,
-      "x-api-key": apiKey,
-    };
-
-    const policyRes = await fetch(gqlUrl, {
-      method: "POST",
-      headers: gqlHeaders,
-      body: JSON.stringify({
-        query: `mutation ($accountId: String!, $input: CreateSaleRegistrationPolicyInput!) {
-          createSaleRegistrationPolicy(accountId: $accountId, input: $input) { id code }
-        }`,
-        variables: {
-          accountId,
-          input: {
-            code: "require_shipping_address",
-            description: "Bidders must provide a shipping address before bidding",
-            rule: 'size(user.addresses.filter(a, a.addressType == "SHIPPING")) > 0',
-          },
-        },
-      }),
-    });
-
-    const policyData = (await policyRes.json()) as {
-      data?: { createSaleRegistrationPolicy?: { id: string; code: string } };
-    };
-    const policyId = policyData.data?.createSaleRegistrationPolicy?.id;
-
-    if (policyId) {
-      await fetch(gqlUrl, {
-        method: "POST",
-        headers: gqlHeaders,
-        body: JSON.stringify({
-          query: `mutation ($accountId: String!, $input: AttachSaleRegistrationPoliciesInput!) {
-            attachSaleRegistrationPolicies(accountId: $accountId, input: $input) { id }
-          }`,
-          variables: {
-            accountId,
-            input: { saleId, policyIds: [policyId] },
-          },
-        }),
-      });
-      console.log(`[auto-source] Attached shipping address policy: ${policyId}`);
-    }
-  } catch (e) {
-    console.warn("[auto-source] Failed to attach registration policy (non-blocking):", e);
-  }
+  await attachShippingAddressPolicy(saleId);
 
   // Step 5: Create items in the sale
   const openDate = new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -1142,48 +1099,7 @@ export async function runAutoSource(params: {
       if (!itemId) throw new Error("No item ID returned");
 
       // Upload images
-      for (let j = 0; j < c.images.length; j++) {
-        try {
-          const uploadResult = await bastaClient.mutation({
-            createUploadUrl: {
-              __args: {
-                accountId,
-                input: {
-                  imageTypes: ["SALE_ITEM"],
-                  contentType: "image/jpeg",
-                  order: j + 1,
-                  saleId,
-                  itemId,
-                },
-              },
-              imageId: true,
-              uploadUrl: true,
-              imageUrl: true,
-              headers: { key: true, value: true },
-            },
-          });
-
-          const uploadData = uploadResult.createUploadUrl;
-          if (!uploadData?.uploadUrl) continue;
-
-          const imgResponse = await fetch(c.images[j]);
-          if (!imgResponse.ok) continue;
-          const imgBuffer = Buffer.from(await imgResponse.arrayBuffer());
-
-          const putHeaders: Record<string, string> = { "Content-Type": "image/jpeg" };
-          for (const h of uploadData.headers ?? []) {
-            if (h.key !== "Host") putHeaders[h.key] = h.value;
-          }
-
-          await fetch(uploadData.uploadUrl, {
-            method: "PUT",
-            headers: putHeaders,
-            body: imgBuffer,
-          });
-        } catch {
-          // Image upload failure is non-blocking
-        }
-      }
+      await uploadItemImages(bastaClient, saleId, itemId, c.images);
 
       await updateDropshipLot(lotId, {
         basta_sale_id: saleId,

@@ -253,11 +253,9 @@ This platform includes an automated dropship auction pipeline. The flow:
 
 The entire lifecycle is tracked in a local Turso (SQLite) database in the `dropship_lots` table. Each lot moves through a status chain from SOURCED to DELIVERED, with failure branches at each step.
 
-### Two Sourcing Modes
+### Sourcing
 
-**Standard sourcing** (`pnpm pipeline:source`): Single-keyword, small batch (max 5 items). Good for testing and daily cron. Uses simple percentage-based pricing (50% starting bid, 130% reserve). Consider migrating to the financial pricing model in the future.
-
-**Smart sourcing** (`pnpm pipeline:smart-source`): Multi-category, large batch (300+ items per auction). Two-phase scoring pipeline that searches 25 keywords across 6 categories, evaluates top 500 candidates in detail, and creates 3 auctions with staggered close dates. Uses the financial pricing model (see below).
+**Standard sourcing** (`pnpm pipeline:source`): Single-keyword, small batch (max 5 items). Used for testing and the daily cron. All sourcing uses the financial pricing model (`lib/auction-pricing.ts`) to guarantee non-negative profit after Stripe fees, buyer premium, and CJ price fluctuation.
 
 ### Pricing Model (`lib/auction-pricing.ts`)
 
@@ -360,26 +358,9 @@ Without `--sale-id`: shows total lot counts by status, stuck lots, failed lots, 
 
 With `--sale-id`: shows Basta sale status, individual item statuses with winners and bids, plus local lot data.
 
-### `pnpm pipeline:smart-source`
+### `pnpm strategy:report`
 
-Smart sourcing agent for bulk auction creation. Searches broadly across categories, scores products on margin potential, and creates multiple auctions with custom close dates.
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--publish` | (off) | Publish auctions after creation |
-| `--dry-run` | (off) | Score products only, don't create auctions |
-| `--resume <run-id>` | (none) | Resume an interrupted run |
-| `--num-auctions <n>` | `3` | Number of auctions to create |
-| `--items-per-auction <n>` | `300` | Target items per auction |
-| `--max-detail <n>` | `500` | Max products to evaluate in Phase 2 |
-| `--buyer-premium <rate>` | `0.15` | Buyer premium rate (0.15 = 15%) |
-
-**Three phases:**
-1. **Phase 1 (Wide Search, ~4 min):** Searches 25 keywords across 6 categories with 2 sort orders and up to 3 pages each (~160 CJ calls). Scores on popularity, price sweet spot ($3-$25), inventory depth, media quality, category diversity.
-2. **Phase 2 (Deep Evaluation, ~30 min):** Takes top 500 from Phase 1. For each: `getProduct` + `getInventoryByProduct` + `calculateFreight`. Smart variant selection (best markup-to-weight ratio). Scores on markup potential, shipping efficiency, image quality, margin.
-3. **Phase 3 (Auction Creation, ~60-90 min):** Distributes items via stratified round-robin across 3 auctions (Thu/Fri/Sat 8pm PST close). Creates Basta sales, uploads images, publishes. Uses financial pricing model for reserves and penny-staggered starting bids.
-
-Progress is saved to `data/smart-source-runs/<runId>.json` after each keyword (Phase 1) and every 10 products (Phase 2). Resume with `--resume <runId>`.
+Lightweight single-call Claude strategy analysis. Pre-fetches all pipeline data (dashboard, financials, CJ quota, lot counts, keywords), sends to Claude in one API call, and prints a structured business report to stdout. Requires `ANTHROPIC_API_KEY`.
 
 ### `pnpm pipeline:keywords`
 
@@ -534,18 +515,18 @@ All must be set in `.env.local` (local dev) or Vercel environment settings (prod
 - **Max products per sourcing run: 5** -- Each product requires 3-4 API calls (search, getProduct, getInventory, calculateFreight). ~15-20 CJ calls per run.
 - **Max 2 standard sourcing runs per day** on the free CJ tier (1,000 lifetime calls per endpoint).
 
-### Smart Sourcing (`pnpm pipeline:smart-source`)
-- **~1,610 CJ API calls per full run** -- Phase 1 uses ~160 search calls, Phase 2 uses ~1,500 detail/inventory/freight calls. This is a **heavy quota consumer**. Do not run smart sourcing on the free CJ tier without verifying quota first.
-- **Always `--dry-run` first** -- Verify scoring distribution and category diversity before committing to auction creation.
-- **Resume interrupted runs** -- If a run is interrupted, use `--resume <runId>` rather than starting over. Progress is saved to `data/smart-source-runs/<runId>.json`.
-
-### Shared Guardrails
+### General Guardrails
 - **Max wholesale cost: $50** -- Do not source items above this without explicit human approval. Higher-cost items increase financial risk on failed orders.
 - **Do not publish a sale without verifying images uploaded correctly** -- If image uploads fail silently, the listing will have no photos. Check the sourcing output for "Image X: uploaded" messages.
-- **Always check quota before sourcing** -- The `pipeline:source` command does this automatically. For smart sourcing, Phase 1 prints quota before Phase 2 begins. For manual checks, run `pnpm pipeline:status`.
+- **Always check quota before sourcing** -- The `pipeline:source` command does this automatically. For manual checks, run `pnpm pipeline:status`.
 - **1.2-second delay between CJ API calls** -- The client enforces a 1,200ms sleep between consecutive CJ requests to avoid rate limiting. Do not bypass this.
 - **CJ access token lasts 15 days, refresh token 180 days** -- Tokens are persisted in `.cj-token.json` in the project root. If auth issues occur, delete this file to force re-authentication.
 - **Never sell below the computed reserve** -- The financial model in `lib/auction-pricing.ts` guarantees profit after Stripe fees, buyer premium, and CJ price fluctuation. Do not manually override reserves with lower values.
+- **All sourcing uses the financial pricing model** -- Reserve prices are computed by `computePricing()` from `lib/auction-pricing.ts`, which accounts for Stripe fees, buyer premium, CJ fluctuation buffer, and safety margin. There are no "naive" pricing paths in production code.
+
+### Pipeline Guards (in `/api/cron/process`)
+- **Daily spending cap: $500** -- If total `total_cost_cents` for CJ-ordered/paid/shipped/delivered lots updated today exceeds $500, the cron halts and sends a critical alert.
+- **Margin floor: -5%** -- If the overall profit margin drops below -5%, the cron halts and sends a critical alert. This catches systemic pricing or fulfillment issues.
 
 ---
 
@@ -553,15 +534,21 @@ All must be set in `.env.local` (local dev) or Vercel environment settings (prod
 
 Defined in `vercel.json`. Both require the `CRON_SECRET` Bearer token for authentication.
 
-### `/api/cron/process` -- Every 10 minutes (`*/10 * * * *`)
+### `/api/cron/process` -- Daily at 12 PM UTC (`0 12 * * *`)
 
-The workhorse cron. Runs 5 independent steps (each step has its own try/catch so one failure does not block others):
+The workhorse cron. Runs pipeline guards first, then 6 independent steps (each step has its own try/catch so one failure does not block others):
 
-1. **Poll closed sales** (`pollAndProcessClosedSales`) -- Fetches all CLOSED sales from Basta, finds unprocessed items with winners, creates orders/invoices. This catches any items missed by the Basta webhook.
-2. **Retry failed fulfillments** (`retryFailedFulfillments`) -- Finds all PAID lots and re-attempts CJ order creation. Handles cases where the Stripe webhook fired but CJ fulfillment failed.
+**Guards (halt if tripped):**
+- **Daily spending cap** -- If today's CJ spending exceeds $500, halt and alert.
+- **Margin floor** -- If profit margin drops below -5%, halt and alert.
+
+**Steps:**
+1. **Poll closed sales** (`pollAndProcessClosedSales`) -- Fetches all CLOSED sales from Basta, finds unprocessed items with winners, creates orders/invoices.
+2. **Retry failed fulfillments** (`retryFailedFulfillments`) -- Finds all PAID lots and re-attempts CJ order creation.
 3. **Process refunds** (`processRefunds`) -- Finds all lots in CJ_OUT_OF_STOCK and CJ_PRICE_CHANGED status, refunds via Stripe, cancels Basta payment orders, updates lot to CANCELLED.
-4. **Financial summary** -- Attaches revenue/cost/profit data to the response for monitoring.
+4. **Financial summary + margin check** -- Attaches revenue/cost/profit data; halts if margin floor breached.
 5. **CJ quota check** -- Checks API quota and sends a critical alert if any endpoint is below 100 remaining.
+6. **Stuck lot detection** -- Detects and recovers lots stuck in intermediate states.
 
 Max execution time: 60 seconds.
 
@@ -585,13 +572,12 @@ Max execution time: 120 seconds.
 | File | Purpose |
 |------|---------|
 | `scripts/orchestrate.ts` | CLI entry point for standard pipeline. Dispatches to source, monitor, run, status, keywords subcommands. |
-| `scripts/smart-source.ts` | CLI entry point for smart sourcing agent. Parses flags, invokes `runSmartSource()`. |
+| `scripts/strategy-report.ts` | Single-call Claude strategy analysis. Pre-fetches data, prints report. |
 | `lib/pipeline.ts` | Shared pipeline operations: poll closed sales, retry fulfillments, process refunds, dashboard, quota check, auto-source. Used by both CLI and cron. |
-| `lib/smart-sourcing.ts` | Smart sourcing engine: 3-phase pipeline (wide search, deep evaluation, auction creation). Scoring, stratified distribution, resumability via JSON checkpoints in `data/smart-source-runs/`. |
 | `lib/auction-pricing.ts` | Financial pricing model. `computeReserve()` guarantees profit after Stripe fees, buyer premium, and CJ price fluctuation. `computeStartingBid()` generates penny-staggered psychologically-tuned starting bids. `printPricingTable()` for diagnostics. |
-| `lib/sourcing-categories.ts` | Curated keyword list: 25 keywords across 6 categories (Electronics, Home, Fashion, Toys, Beauty, Sports). Used by smart sourcing agent. |
+| `lib/auction-helpers.ts` | Shared auction helpers: `DEFAULT_BID_INCREMENT_RULES`, `DEFAULT_BUYER_PREMIUM_RATE`, `attachShippingAddressPolicy()`, `uploadItemImages()`. |
 | `lib/cj-client.ts` | CJ Dropshipping REST API client. Handles auth token management (15-day access, 180-day refresh), product search, inventory, freight, orders, payments, tracking. Base URL: `https://developers.cjdropshipping.com/api2.0/v1` |
-| `lib/dropship.ts` | DB operations for `dropship_lots` table. Insert, update, query by status/sale/item/order. Defines the `DropshipLotStatus` type union. |
+| `lib/dropship.ts` | DB operations for `dropship_lots` table. Insert, update (with state machine validation), query by status/sale/item/order. Defines the `DropshipLotStatus` type union. |
 | `lib/dropship-fulfillment.ts` | Post-payment CJ order creation. Guards: re-checks inventory (out-of-stock aborts), re-checks price (>20% increase aborts). Creates order, pays from balance, confirms, calculates profit. |
 | `lib/dropship-refund.ts` | Stripe refund + Basta order cancellation for failed lots. Handles paid invoices (refund), open/draft invoices (void), and already-cancelled invoices (skip). |
 | `lib/sourcing-keywords.ts` | DB operations for `sourcing_keywords` table. Keyword rotation: get next (oldest + highest priority), mark sourced, insert, list, toggle, delete. |
@@ -610,7 +596,7 @@ Max execution time: 120 seconds.
 
 | File | Purpose |
 |------|---------|
-| `app/api/cron/process/route.ts` | Every 10 min: poll closed sales, retry fulfillments, process refunds, check quota. |
+| `app/api/cron/process/route.ts` | Daily 12 PM UTC: pipeline guards, poll closed sales, retry fulfillments, process refunds, check quota, stuck lots. |
 | `app/api/cron/source/route.ts` | Daily 8 AM UTC: auto-source next keyword in rotation. |
 
 ### Supporting Services
@@ -632,7 +618,6 @@ Max execution time: 120 seconds.
 | `package.json` | All `pipeline:*` script definitions. |
 | `.env.local` | Environment variables (not committed). |
 | `.cj-token.json` | Persisted CJ API access/refresh tokens (auto-generated, not committed). |
-| `data/smart-source-runs/<runId>.json` | Smart sourcing progress checkpoints. Auto-created during runs. Used for `--resume`. |
 
 ---
 
@@ -682,239 +667,3 @@ Delete `.cj-token.json` from the project root and retry. The client will re-auth
 **Images missing on auction listings:**
 Image upload can fail silently (CJ image download failure or Basta S3 PUT failure). Check the sourcing command output for "Image X: uploaded" vs warning messages. Re-source the products if images are critical.
 
----
-
-# Autonomous Agent Harness
-
-## Overview
-
-The agent harness wraps the existing dropship pipeline with an LLM-powered autonomous agent system. Instead of running manual CLI commands and monitoring dashboards, Claude agents operate the pipeline autonomously via tool calling.
-
-**Architecture:**
-```
-┌─────────────────────────────────────────────────┐
-│              AGENT HARNESS                       │
-│  lib/agent/harness.ts                           │
-│  Anthropic SDK → Claude → tool_use loop         │
-│  + circuit breakers + shadow gate + ledger       │
-├──────────┬──────────────┬───────────────────────┤
-│ Pipeline │  Supplier    │  Platform             │
-│ Tools    │  Tools       │  Tools                │
-│ 21 tools │  8 tools     │  5 tools              │
-├──────────┴──────────────┴───────────────────────┤
-│           EXISTING LIB/ FUNCTIONS                │
-│  pipeline.ts │ cj-client.ts │ basta-client.ts   │
-│  dropship.ts │ smart-sourcing.ts │ pricing.ts   │
-│  order-service.ts │ alerts.ts │ email.ts        │
-└─────────────────────────────────────────────────┘
-```
-
-No pipeline code was rewritten. Every tool is a thin wrapper around an existing `lib/` function.
-
----
-
-## Three Agents
-
-| Agent | ID | Model | Max Turns | Tools | Purpose |
-|-------|----|-------|-----------|-------|---------|
-| Operations | `ops` | claude-sonnet-4-20250514 | 15 | 18 (all pipeline + alert) | Poll closed sales, retry fulfillments, process refunds, handle stuck lots, check quota |
-| Sourcing | `sourcing` | claude-sonnet-4-20250514 | 10 | 11 (sourcing subset + CJ search + pricing) | Decide whether and what to source based on inventory levels and CJ quota |
-| Strategy | `strategy` | claude-sonnet-4-20250514 | 20 | 21 (all read-only tools) | Analyze financial health, category performance, pricing effectiveness |
-
----
-
-## auctionctl CLI
-
-The primary human interface for the agent system. Run via `pnpm auctionctl`.
-
-| Command | Description |
-|---------|-------------|
-| `pnpm auctionctl run <agent>` | Run an agent (ops, sourcing, strategy). Flags: `--shadow`, `--max-turns <N>` |
-| `pnpm auctionctl cron` | Run ops then sourcing agents in sequence |
-| `pnpm auctionctl status` | Show pipeline status dashboard (same as `pnpm pipeline:status`) |
-| `pnpm auctionctl runs` | Show recent agent runs. Flags: `--agent <id>`, `--last <N>` |
-| `pnpm auctionctl decisions` | Show decisions for a run. Flags: `--run-id <id>`, `--last <N>` |
-| `pnpm auctionctl breakers` | Show circuit breaker states. Flag: `--reset <breaker-name>` |
-| `pnpm auctionctl shadow on\|off` | Toggle global shadow mode on/off |
-| `pnpm auctionctl replay <run-id>` | Replay a run's full decision chain |
-
----
-
-## Shadow Mode
-
-Shadow mode lets agents run safely without side effects. All 12 side-effect tools return simulated `[SHADOW]` responses. Read-only tools execute normally against real data.
-
-**Activation:**
-- Per-run: `pnpm auctionctl run ops --shadow`
-- Global: `pnpm auctionctl shadow on` (forces all runs into shadow mode)
-- Env var: `AGENT_SHADOW_MODE="true"` in `.env.local`
-
-**Side-effect tools** (blocked in shadow mode): `pipeline_poll_closed_sales`, `pipeline_retry_fulfillments`, `pipeline_process_refunds`, `pipeline_handle_stuck_lots`, `pipeline_auto_source`, `pipeline_smart_source`, `lot_update`, `keyword_add`, `cj_create_order`, `cj_pay_order`, `alert_send`, `email_send`
-
----
-
-## Circuit Breakers
-
-Six breakers prevent runaway agent behavior. State is persisted in the `circuit_breaker_state` DB table. Daily counters auto-reset at midnight UTC.
-
-| Breaker | Default Threshold | Protects Against |
-|---------|-------------------|------------------|
-| `daily_spending_cap` | $500/day | Runaway CJ spending |
-| `daily_lot_creation_cap` | 500 lots/day | Excessive sourcing |
-| `margin_floor` | -5% profit margin | Operating at a loss |
-| `max_consecutive_failures` | 5 failures | Broken tool loop |
-| `max_cj_orders_per_hour` | 20 orders/hour | CJ rate limit abuse |
-| `max_refunds_per_day` | 50 refunds/day | Mass refund cascade |
-
-When a breaker trips, the agent receives an error response and can adapt or stop. Reset via `pnpm auctionctl breakers --reset <name>`.
-
----
-
-## Decision Ledger
-
-Every agent action is logged to the database for auditability:
-
-- **`agent_runs` table**: One row per run (correlationId, agent, status, turns, tool calls, summary)
-- **`agent_decisions` table**: One row per tool call (reasoning, tool name, args, result, duration, shadow mode, breaker trips)
-
-Query via:
-- `pnpm auctionctl runs` — List recent runs
-- `pnpm auctionctl decisions --run-id <id>` — Show all decisions for a run
-- `pnpm auctionctl replay <run-id>` — Full formatted replay
-
----
-
-## State Machine
-
-Lot status transitions are validated by `lib/agent/state-machine.ts`. The `lot_update` tool checks `validateTransition(from, to)` before allowing status changes. Invalid transitions return an error to the agent.
-
-Valid transitions map all 14 statuses in `DropshipLotStatus`:
-```
-SOURCED → LISTED, CANCELLED
-LISTED → PUBLISHED, CANCELLED
-PUBLISHED → AUCTION_CLOSED, RESERVE_NOT_MET, CANCELLED
-AUCTION_CLOSED → PAID, PAYMENT_FAILED, CANCELLED
-PAID → CJ_ORDERED, CJ_OUT_OF_STOCK, CJ_PRICE_CHANGED, CANCELLED
-CJ_ORDERED → CJ_PAID, CANCELLED
-CJ_PAID → SHIPPED, CANCELLED
-SHIPPED → DELIVERED, CANCELLED
-DELIVERED → (terminal)
-RESERVE_NOT_MET → (terminal)
-CANCELLED → (terminal)
-PAYMENT_FAILED → PAID, CANCELLED
-CJ_OUT_OF_STOCK → CANCELLED
-CJ_PRICE_CHANGED → CANCELLED
-```
-
----
-
-## Agent Cron Endpoints
-
-Two new cron endpoints run agents on schedule (alongside the existing pipeline crons):
-
-| Endpoint | Schedule | Agent | Max Duration |
-|----------|----------|-------|-------------|
-| `/api/cron/agent-process` | Daily 12 PM UTC | ops (maxTurns: 10) | 60s |
-| `/api/cron/agent-source` | Daily 8 AM UTC | sourcing | 120s |
-
-Auth: Bearer token matching `CRON_SECRET` env var. Configured in `vercel.json`.
-
----
-
-## Tool Inventory (34 tools)
-
-### Pipeline Tools (`lib/agent/mcp/pipeline-server.ts`)
-
-| Tool | Side Effect | Description |
-|------|:-----------:|-------------|
-| `pipeline_get_dashboard` | | Full status dashboard: lot counts, stuck lots, financials |
-| `pipeline_get_financials` | | Financial summary: revenue, cost, profit, margin |
-| `pipeline_poll_closed_sales` | Yes | Process closed Basta sales, create orders/invoices |
-| `pipeline_retry_fulfillments` | Yes | Retry PAID lots for CJ fulfillment |
-| `pipeline_process_refunds` | Yes | Refund CJ_OUT_OF_STOCK and CJ_PRICE_CHANGED lots |
-| `pipeline_handle_stuck_lots` | Yes | Process lots stuck for >4 hours |
-| `pipeline_check_cj_quota` | | Check CJ API quota across all endpoints |
-| `pipeline_auto_source` | Yes | Standard single-keyword sourcing |
-| `pipeline_smart_source` | Yes | Multi-category bulk sourcing |
-| `lot_get_by_id` | | Query single lot by ID |
-| `lot_get_by_status` | | Query lots by status |
-| `lot_get_by_sale` | | Query lots by Basta sale ID |
-| `lot_get_all` | | Query all lots (with limit) |
-| `lot_get_status_counts` | | Count lots grouped by status |
-| `lot_update` | Yes | Update lot fields (validates status transitions) |
-| `keyword_list` | | List all sourcing keywords |
-| `keyword_add` | Yes | Add keyword to rotation |
-| `basta_get_sale_status` | | Query Basta sale status |
-| `basta_fetch_closed_sales` | | Fetch closed sales from Basta |
-| `basta_fetch_sale_items` | | Fetch items for a Basta sale |
-
-### Supplier Tools (`lib/agent/mcp/supplier-server.ts`)
-
-| Tool | Side Effect | Description |
-|------|:-----------:|-------------|
-| `cj_search_products` | | Search CJ products by keyword |
-| `cj_get_product` | | Get CJ product details |
-| `cj_get_inventory` | | Check CJ inventory by variant |
-| `cj_calculate_freight` | | Calculate CJ shipping costs |
-| `cj_create_order` | Yes | Create a CJ dropship order |
-| `cj_pay_order` | Yes | Pay a CJ order from balance |
-| `cj_get_order_detail` | | Get CJ order details |
-| `cj_get_balance` | | Check CJ account balance |
-
-### Platform Tools (`lib/agent/mcp/platform-server.ts`)
-
-| Tool | Side Effect | Description |
-|------|:-----------:|-------------|
-| `pricing_compute` | | Full pricing breakdown for a product |
-| `pricing_compute_reserve` | | Compute reserve price only |
-| `pricing_compute_starting_bid` | | Compute starting bid only |
-| `alert_send` | Yes | Send pipeline alert (Discord/Slack/webhook) |
-| `email_send` | Yes | Send transactional email |
-
----
-
-## Agent Harness File Map
-
-| File | Purpose |
-|------|---------|
-| `lib/agent/types.ts` | All shared types: AgentId, AgentConfig, ToolResult, ToolHandler, ToolDefinition, CircuitBreakerConfig, DecisionLedgerEntry, AgentRunResult. Includes `zodToJsonSchema()` converter. |
-| `lib/agent/harness.ts` | Main agent loop: Anthropic SDK, tool_use processing, turn counting, decision logging, error handling. Entry point: `runAgent()`. |
-| `lib/agent/tool-dispatch.ts` | Tool dispatcher: shadow gate + circuit breaker integration. `buildToolDispatcher()` wraps every tool call. |
-| `lib/agent/decision-ledger.ts` | DB operations for `agent_runs` and `agent_decisions` tables. `startRun()`, `completeRun()`, `logDecision()`, `getRecentRuns()`, `getDecisionsForRun()`, `getRunById()`. |
-| `lib/agent/circuit-breakers.ts` | Circuit breaker state management. `checkCircuitBreakers()`, `initBreakerState()`, `getBreakerState()`, `tripBreaker()`, `resetBreaker()`, `incrementBreaker()`. |
-| `lib/agent/state-machine.ts` | Lot status transition validation. `validateTransition()`, `getValidNextStatuses()`, `getTerminalStatuses()`. |
-| `lib/agent/shadow-gate.ts` | Shadow mode gate. `isSideEffect()`, `shadowResult()`. 12 side-effect tools defined in `SIDE_EFFECT_TOOLS` set. |
-| `lib/agent/mcp/pipeline-server.ts` | 21 pipeline tools wrapping `lib/pipeline.ts`, `lib/dropship.ts`, `lib/sourcing-keywords.ts`, `lib/smart-sourcing.ts`. |
-| `lib/agent/mcp/supplier-server.ts` | 8 CJ tools wrapping `lib/cj-client.ts`. |
-| `lib/agent/mcp/platform-server.ts` | 5 platform tools wrapping `lib/auction-pricing.ts`, `lib/alerts.ts`, `lib/email.ts`. |
-| `lib/agent/mcp/index.ts` | Tool barrel: `getAllTools()`, `getToolsByNames()`, `getToolDefinitions()`. |
-| `lib/agent/agents/ops-agent.ts` | Operations agent system prompt + config (18 tools, 15 turns). |
-| `lib/agent/agents/sourcing-agent.ts` | Sourcing agent system prompt + config (11 tools, 10 turns). |
-| `lib/agent/agents/strategy-agent.ts` | Strategy agent system prompt + config (21 read-only tools, 20 turns). |
-| `lib/agent/agents/index.ts` | Agent registry: `getAgentConfig()`, `listAgents()`. |
-| `scripts/auctionctl.ts` | CLI entry point: run, cron, status, runs, decisions, breakers, shadow, replay. |
-| `db/migrations/001-agent-harness.sql` | DB migration: `agent_runs`, `agent_decisions`, `circuit_breaker_state` tables. |
-| `app/api/cron/agent-process/route.ts` | Cron endpoint for ops agent. |
-| `app/api/cron/agent-source/route.ts` | Cron endpoint for sourcing agent. |
-
----
-
-## Agent Environment Variables
-
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `ANTHROPIC_API_KEY` | Yes (for agents) | Anthropic API key for Claude calls |
-| `AGENT_SHADOW_MODE` | No | Set to `"true"` to force all agent runs into shadow mode |
-| `CRON_SECRET` | Yes (for cron) | Bearer token for Vercel cron authentication |
-
----
-
-## Quick Start: First Agent Run
-
-1. Set `ANTHROPIC_API_KEY` in `.env.local`
-2. Run `pnpm db:init` to create agent tables
-3. Run `pnpm auctionctl shadow on` to enable global shadow mode
-4. Run `pnpm auctionctl run ops --shadow` for a safe test run
-5. Run `pnpm auctionctl runs --last 1` to see the run summary
-6. Run `pnpm auctionctl replay <run-id>` to see the full decision chain
-7. When confident, `pnpm auctionctl shadow off` and run live

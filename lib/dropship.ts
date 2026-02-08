@@ -60,6 +60,36 @@ export type DropshipLotStatus =
   | "CANCELLED";
 
 // ---------------------------------------------------------------------------
+// State Machine — valid status transitions
+// ---------------------------------------------------------------------------
+
+const VALID_TRANSITIONS: Record<DropshipLotStatus, DropshipLotStatus[]> = {
+  SOURCED: ["LISTED", "CANCELLED"],
+  LISTED: ["PUBLISHED", "CANCELLED"],
+  PUBLISHED: ["AUCTION_CLOSED", "RESERVE_NOT_MET", "CANCELLED"],
+  AUCTION_CLOSED: ["PAID", "PAYMENT_FAILED", "CANCELLED"],
+  PAID: ["CJ_ORDERED", "CJ_OUT_OF_STOCK", "CJ_PRICE_CHANGED", "CANCELLED"],
+  CJ_ORDERED: ["CJ_PAID", "CANCELLED"],
+  CJ_PAID: ["SHIPPED", "CANCELLED"],
+  SHIPPED: ["DELIVERED", "CANCELLED"],
+  DELIVERED: [],
+  RESERVE_NOT_MET: [],
+  PAYMENT_FAILED: ["PAID", "CANCELLED"],
+  CJ_OUT_OF_STOCK: ["CANCELLED"],
+  CJ_PRICE_CHANGED: ["CANCELLED"],
+  CANCELLED: [],
+};
+
+export function validateTransition(
+  from: DropshipLotStatus,
+  to: DropshipLotStatus,
+): boolean {
+  const allowed = VALID_TRANSITIONS[from];
+  if (!allowed) return false;
+  return allowed.includes(to);
+}
+
+// ---------------------------------------------------------------------------
 // Insert
 // ---------------------------------------------------------------------------
 
@@ -136,6 +166,14 @@ export async function updateDropshipLot(
     >
   >
 ): Promise<void> {
+  // Validate status transition if status is being changed
+  if (updates.status) {
+    const currentLot = await getDropshipLotById(id);
+    if (currentLot && !validateTransition(currentLot.status as DropshipLotStatus, updates.status as DropshipLotStatus)) {
+      throw new Error(`Invalid status transition: ${currentLot.status} → ${updates.status}`);
+    }
+  }
+
   const setClauses: string[] = ["updated_at = ?"];
   const args: (string | number | null)[] = [new Date().toISOString()];
 
