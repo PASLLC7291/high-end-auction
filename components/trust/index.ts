@@ -10,10 +10,6 @@ export type { TrustMetric } from "./trust-bar";
 export { TestimonialCard, TestimonialGrid } from "./testimonial-card";
 export type { Testimonial } from "./testimonial-card";
 
-// Team members
-export { TeamMemberCard, TeamGrid } from "./team-member-card";
-export type { TeamMember } from "./team-member-card";
-
 // Badges
 export {
   SecurityBadge,

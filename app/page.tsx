@@ -23,7 +23,6 @@ import { clientApiSchema } from "@bastaai/basta-js";
 import { TrustBar } from "@/components/trust";
 import { StatusBadge } from "@/components/trust/badges";
 import { TestimonialCard } from "@/components/trust/testimonial-card";
-import { TeamMemberCard } from "@/components/trust/team-member-card";
 import { Section, SectionHeader } from "@/components/trust/section-header";
 import { getAuctionCardImage } from "@/lib/cloudinary";
 
@@ -131,7 +130,7 @@ const howItWorksSteps = [
 // Featured testimonials
 const testimonials = [
   {
-    quote: "The team's expertise and transparency made selling my collection a seamless experience. Highly recommend.",
+    quote: "The expertise and transparency made selling my collection a seamless experience. Highly recommend.",
     author: "Margaret Chen",
     title: "Private Collector",
     location: "San Francisco, CA",
@@ -147,28 +146,6 @@ const testimonials = [
     author: "Sarah Thompson",
     title: "Estate Executor",
     location: "Boston, MA",
-  },
-];
-
-// Team preview
-const teamPreview = [
-  {
-    name: "Alexandra Reed",
-    title: "Head of Fine Art",
-    credentials: ["20+ years experience", "Former Christie's"],
-    image: "/placeholder-user.jpg",
-  },
-  {
-    name: "Michael Torres",
-    title: "Senior Specialist",
-    credentials: ["Decorative Arts", "Certified Appraiser"],
-    image: "/placeholder-user.jpg",
-  },
-  {
-    name: "Emily Watson",
-    title: "Client Relations",
-    credentials: ["Collector Services", "Private Sales"],
-    image: "/placeholder-user.jpg",
   },
 ];
 
@@ -393,7 +370,7 @@ export default async function HomePage() {
             {
               icon: Users,
               title: "Expert Support",
-              description: "Our team is available to answer questions and guide your experience.",
+              description: "We're available to answer questions and guide your experience.",
             },
             {
               icon: Award,
@@ -427,28 +404,6 @@ export default async function HomePage() {
           {testimonials.map((testimonial, index) => (
             <TestimonialCard key={index} testimonial={testimonial} />
           ))}
-        </div>
-      </Section>
-
-      {/* Meet the Team Preview */}
-      <Section>
-        <SectionHeader
-          title="Meet Our Specialists"
-          subtitle="Our experienced team brings decades of expertise to every auction."
-          align="center"
-        />
-        <div className="grid gap-6 md:grid-cols-3">
-          {teamPreview.map((member, index) => (
-            <TeamMemberCard key={index} member={member} showContact={false} />
-          ))}
-        </div>
-        <div className="mt-10 text-center">
-          <Link href="/team">
-            <Button variant="outline">
-              Meet the Full Team
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </Link>
         </div>
       </Section>
 

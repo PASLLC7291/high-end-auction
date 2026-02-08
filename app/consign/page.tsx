@@ -178,7 +178,7 @@ const services = [
 // Testimonials from consignors
 const consignorTestimonials = [
   {
-    quote: "The team's expertise and transparency made selling my late father's collection much easier than expected. They exceeded our estimates.",
+    quote: "The expertise and transparency made selling my late father's collection much easier than expected. They exceeded our estimates.",
     author: "Patricia Morrison",
     title: "Estate Executor",
     location: "Greenwich, CT",

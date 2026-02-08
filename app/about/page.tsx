@@ -5,11 +5,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Shield,
   Award,
-  Users,
   Eye,
   Heart,
   Scale,
-  ArrowRight,
   CheckCircle,
   Building2,
   GraduationCap,
@@ -158,13 +156,11 @@ export default function AboutPage() {
             />
             <div className="space-y-4 text-muted-foreground leading-relaxed">
               <p>
-                Auction House was founded in 2020 by a team of experienced auction professionals
-                who saw an opportunity to bring a higher standard of trust and service to the
-                online auction market.
+                Auction House was founded in 2020 with a mission to bring a higher standard of
+                trust and service to the online auction market.
               </p>
               <p>
-                Having spent decades at leading auction houses, our founders understood that
-                the foundation of any successful auction business is trust. Buyers need confidence
+                The foundation of any successful auction business is trust. Buyers need confidence
                 that items are accurately described and authenticated. Sellers need assurance
                 that their pieces will be marketed effectively and sold fairly.
               </p>
@@ -326,24 +322,6 @@ export default function AboutPage() {
               </CardContent>
             </Card>
           ))}
-        </div>
-      </Section>
-
-      {/* Team Preview CTA */}
-      <Section background="alt">
-        <div className="mx-auto max-w-2xl text-center">
-          <Users className="mx-auto h-12 w-12 text-primary/40" />
-          <h2 className="mt-6">Meet Our Team</h2>
-          <p className="mt-4 text-muted-foreground">
-            Our specialists bring decades of combined experience from leading auction houses,
-            museums, and galleries. Get to know the experts behind Auction House.
-          </p>
-          <Link href="/team">
-            <Button className="mt-8 gap-2">
-              View Our Specialists
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
         </div>
       </Section>
 
